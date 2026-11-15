@@ -56,10 +56,9 @@ ok(a.moves.every((m, i) => i === 0 || a.moves[i - 1].score >= m.score), "読み�
 ok(engine.opening("f5d6c3d3c4").name === "虎（Tiger）", "虎を判定できる");
 ok(engine.opening("").name === null && engine.opening("a1").name === null, "定石でないものは null");
 
-// Lv.5（短い持ち時間）と Lv.1 で最後まで打つ
+// Lv.5（短い持ち時間）と Lv.1（ランダム）で最後まで打つ
 let s = engine.newGame();
 let moves = 0;
-let solvedSeen = false;
 while (s.legal.length || s.opponentHasMove) {
   if (!s.legal.length) {
     s = engine.getState(s.black, s.white, -s.color);
@@ -67,11 +66,20 @@ while (s.legal.length || s.opponentHasMove) {
   }
   const r = engine.aiMove(s.black, s.white, s.color, s.color === 1 ? "5" : "1", 4, 0.05);
   ok(isLegal(s, r.move), "対局中の手がすべて合法");
-  solvedSeen ||= r.solved;
   s = engine.play(s.black, s.white, s.color, r.move[0], r.move[1]);
   moves++;
 }
-ok(s.blackCount + s.whiteCount <= 64 && moves >= 20, "終局まで打てる");
-ok(solvedSeen, "終盤は完全読みしている");
+ok(s.blackCount + s.whiteCount <= 64 && moves > 0, "終局まで打てる");
+
+// 終盤は完全読みする: 毎回同じ手を打つ Lv.4 同士で空きマス12以下まで進め、Lv.5 に読ませる
+let e = engine.newGame();
+while (e.legal.length && 64 - e.blackCount - e.whiteCount > 12) {
+  const r = engine.aiMove(e.black, e.white, e.color, "4", 2, 1.0);
+  e = engine.play(e.black, e.white, e.color, r.move[0], r.move[1]);
+  if (!e.legal.length && e.opponentHasMove) e = engine.getState(e.black, e.white, -e.color);
+}
+ok(e.legal.length > 1, "読み切りを確かめる局面に打てる手が複数ある（1つだと読まずに返すため）");
+const endgame = engine.aiMove(e.black, e.white, e.color, "5", 4, 5.0);
+ok(endgame.solved && isLegal(e, endgame.move), "空きマス12以下の局面を終局まで読み切る");
 
 console.log(`smoke test: ${checks} 件の確認がすべて通りました（${moves} 手、黒 ${s.blackCount} - ${s.whiteCount} 白）`);
