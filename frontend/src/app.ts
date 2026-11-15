@@ -178,6 +178,7 @@ function render(animate = false) {
   renderAnalysisList();
   renderRecord();
   undoBtn.disabled = !canUndo();
+  undoBtn.title = undoBtn.disabled ? "戻せる手がまだありません" : "直前のあなたの番に戻します（⌘Z / Ctrl+Z）";
 }
 
 function renderRecord() {

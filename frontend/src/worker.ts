@@ -23,11 +23,12 @@ async function init(): Promise<Record<string, PyProxy>> {
   const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
 
   post({ type: "progress", message: "AI エンジンを読み込み中…" });
-  const manifest = await fetch(new URL("./py/manifest.json", self.location.href));
+  const buildVersion = self.location.search; // 例: "?v=1a2b3c"（ビルドごとに変わる）
+  const manifest = await fetch(new URL(`./py/manifest.json${buildVersion}`, self.location.href));
   const modules = (await manifest.json()) as string[];
   const sources = await Promise.all(
     modules.map(async (name) => {
-      const res = await fetch(new URL(`./py/${name}`, self.location.href));
+      const res = await fetch(new URL(`./py/${name}${buildVersion}`, self.location.href));
       if (!res.ok) throw new Error(`${name} を取得できません (${res.status})`);
       return [name, await res.text()] as const;
     }),
