@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Reversi AI</title>
-    <meta name="description" content="Python製のリバーシAIを、Pyodideでブラウザ内実行。AIの読み筋を可視化できます。" />
+    <meta name="description" content="Rust 製のリバーシAI（パターン評価・反復深化 PVS）を WebAssembly でブラウザ内実行。AIの読み筋を可視化できます。" />
     <link rel="stylesheet" href="style.css" />
     <script type="module" src="app.js"></script>
   </head>
@@ -12,7 +12,7 @@
     <header class="site-header">
       <h1>Reversi AI</h1>
       <p class="tagline">
-        Python のαβ探索エンジンを <a href="https://pyodide.org/" target="_blank" rel="noopener">Pyodide</a> でブラウザ内実行
+        Rust 製の探索エンジン（パターン評価）を WebAssembly でブラウザ内実行
       </p>
     </header>
 
@@ -80,7 +80,7 @@
               <option value="2">Lv.2 重み表で1手読み</option>
               <option value="3">Lv.3 ミニマックス</option>
               <option value="4">Lv.4 αβ探索（固定の深さ）</option>
-              <option value="5" selected>Lv.5 最強（約1秒・終盤は完全読み）</option>
+              <option value="5" selected>Lv.5 最強（約1秒・パターン評価・終盤は完全読み）</option>
             </select>
           </div>
           <div class="field" id="depth-field">
@@ -122,7 +122,7 @@
         </div>
 
         <p class="footnote">
-          <span id="runtime">Python –</span> ·
+          <span id="runtime">–</span> ·
           <a href="https://github.com/maruuu-eg-08/reversi" target="_blank" rel="noopener">ソースコード</a>
         </p>
       </aside>

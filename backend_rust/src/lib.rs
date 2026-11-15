@@ -5,11 +5,17 @@
 //! Python からは `import reversi_engine` で使う（`python` フィーチャー、maturin でビルド）。
 
 pub mod board;
+pub mod book;
+pub mod clock;
 pub mod eval;
+pub mod levels;
+pub mod openings;
 pub mod pattern;
 pub mod search;
 pub mod selfplay;
 pub mod train;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 #[cfg(feature = "python")]
 // PyO3 0.22 のマクロが展開するコードに clippy::useless_conversion が誤って反応するため
@@ -229,6 +235,85 @@ mod python {
             .collect())
     }
 
+    // ---------- Web版用に移植した部分（Python 版との一致テスト用） ----------
+
+    /// Rust 側に埋め込んだ評価パラメータ（weights.py と一致するかのテスト用）
+    #[pyfunction]
+    fn params() -> std::collections::HashMap<&'static str, Vec<f64>> {
+        use crate::levels::params::*;
+        std::collections::HashMap::from([
+            ("POSITION_WEIGHTS", POSITION_WEIGHTS.to_vec()),
+            ("EVAL_COEFFS", EVAL_COEFFS.to_vec()),
+            ("WEIGHTED_AI_WEIGHTS", WEIGHTED_AI_WEIGHTS.to_vec()),
+            (
+                "MINIMAX_WEIGHTS",
+                MINIMAX_WEIGHTS.iter().map(|&v| f64::from(v)).collect(),
+            ),
+            ("STRONG_EVAL_COEFFS", STRONG_EVAL_COEFFS.to_vec()),
+        ])
+    }
+
+    /// Lv.2 の最高点の手の一覧
+    #[pyfunction]
+    fn weighted_best_moves(black: u64, white: u64, color: i8) -> Vec<u64> {
+        crate::levels::weighted_best_moves(black, white, color)
+    }
+
+    /// Lv.3 の最高点の手の一覧
+    #[pyfunction]
+    fn minimax_best_moves(black: u64, white: u64, color: i8, depth: i32) -> Vec<u64> {
+        crate::levels::minimax_best_moves(black, white, color, depth)
+    }
+
+    /// Lv.4 の最善手と探索局面数
+    #[pyfunction]
+    fn alphabeta_move(black: u64, white: u64, color: i8, depth: i32) -> (u64, u64) {
+        let mut ab = crate::levels::AlphaBeta::new(color, depth);
+        let m = ab.get_move(black, white);
+        (m, ab.nodes)
+    }
+
+    /// Lv.4 の全手の評価値（良い順）と探索局面数
+    #[pyfunction]
+    fn alphabeta_analyze(black: u64, white: u64, color: i8, depth: i32) -> (Vec<(u64, f64)>, u64) {
+        let mut ab = crate::levels::AlphaBeta::new(color, depth);
+        let r = ab.analyze(black, white);
+        (r, ab.nodes)
+    }
+
+    /// 定石名（openings.identify と同じ）
+    #[pyfunction]
+    fn opening_name(transcript: &str) -> Option<String> {
+        crate::openings::identify(transcript)
+    }
+
+    /// 定石の表（opening_book.OpeningBook と同じ検索）
+    #[pyclass]
+    struct Book {
+        inner: crate::book::OpeningBook,
+    }
+
+    #[pymethods]
+    impl Book {
+        #[new]
+        fn new(text: &str) -> PyResult<Self> {
+            Ok(Self {
+                inner: crate::book::OpeningBook::parse(text).map_err(PyValueError::new_err)?,
+            })
+        }
+
+        fn __len__(&self) -> usize {
+            self.inner.len()
+        }
+
+        /// (手, 評価値, 深さ) または None
+        fn probe(&self, p: u64, o: u64) -> Option<(u64, f64, u32)> {
+            self.inner
+                .probe(p, o)
+                .map(|h| (h.best_move, h.score, h.depth))
+        }
+    }
+
     #[pymodule]
     fn reversi_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(legal_moves, m)?)?;
@@ -239,6 +324,13 @@ mod python {
         m.add_function(wrap_pyfunction!(generate_games, m)?)?;
         m.add("RECORD_SIZE", crate::selfplay::RECORD_SIZE)?;
         m.add_function(wrap_pyfunction!(train_patterns, m)?)?;
+        m.add_function(wrap_pyfunction!(params, m)?)?;
+        m.add_function(wrap_pyfunction!(weighted_best_moves, m)?)?;
+        m.add_function(wrap_pyfunction!(minimax_best_moves, m)?)?;
+        m.add_function(wrap_pyfunction!(alphabeta_move, m)?)?;
+        m.add_function(wrap_pyfunction!(alphabeta_analyze, m)?)?;
+        m.add_function(wrap_pyfunction!(opening_name, m)?)?;
+        m.add_class::<Book>()?;
         Ok(())
     }
 }

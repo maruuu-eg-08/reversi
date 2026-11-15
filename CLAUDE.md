@@ -10,6 +10,7 @@
 - リポジトリ（公開）: https://github.com/maruuu-eg-08/reversi
 - Web版（GitHub Pages）: https://maruuu-eg-08.github.io/reversi/ — main への push で `.github/workflows/pages.yml` が自動デプロイ
 - 会話は日本語。ユーザーは専門家ではないので、専門用語はかみ砕いて説明する
+- **ユーザーに質問するときは、メッセージの最後に番号つきの「質問一覧」にまとめ、それぞれにおすすめの答えを書く**
 
 ## 構成
 
@@ -27,7 +28,8 @@ backend/          Python のエンジンとツール（Web版は Pyodide でこ�
   web_api.py        Web版から呼ぶ JSON API
 backend_rust/     Rust 版エンジン（PyO3、`import reversi_engine`）
   src/board.rs search.rs eval.rs pattern.rs selfplay.rs lib.rs
-frontend/         TypeScript UI（Pyodide を Web Worker で実行）。npm run build で dist/
+frontend/         TypeScript UI。Rust 版エンジンを WebAssembly にして Web Worker で実行（wasm-engine.ts）。
+                  npm run build で Rust→wasm のビルドから dist/ まで作る。npm test は Node での動作確認
 tests/            pytest（pythonpath = backend）
 data/             学習データ（gitignore 済み、大きいのでコミットしない）
 .github/workflows ci.yml（lint・test・rust・frontend）、pages.yml、build-book.yml（手動で定石生成）
@@ -42,7 +44,8 @@ data/             学習データ（gitignore 済み、大きいのでコミッ�
   `python3 -m venv <dir> && <dir>/bin/pip install maturin pytest numpy ruff`
 - テスト: Rust 入り venv で `pytest`（Rust 一致テストを含む）と、anaconda の `python3 -m pytest`（Rust なし＝ブラウザと同じ経路）の両方
 - lint: `ruff check .`、`cd backend_rust && cargo fmt --check && cargo clippy --all-targets --features python -- -D warnings && cargo test --release`
-- フロント: `cd frontend && npm run build`。ローカル確認は `.claude/launch.json` の reversi-web（port 8765, dist を配信）
+- フロント: `rustup target add wasm32-unknown-unknown`（済み）、`cd frontend && npm run build && npm test`。
+  ローカル確認は `.claude/launch.json` の reversi-web（port 8765, dist を配信）
 
 ## 進め方のルール（ユーザーと決めたこと）
 
@@ -62,7 +65,12 @@ data/             学習データ（gitignore 済み、大きいのでコミッ�
 - パターン評価の重みは整数（1/64 石）にして、Python・Rust で足す順番によらず完全一致させている
 - パターンのインスタンスは「マスと順番」が違う回転・反転をすべて含める（84個）→ どんな重みでも評価が盤面対称
 - GitHub Pages は10分キャッシュ → ビルド時に全ファイルの URL に `?v=<hash>` を付けて新旧の混在を防いでいる
-- Web版（Pyodide）には Rust 版が無い。ブラウザを速くするには Rust を WebAssembly 化する必要がある（未着手）
+- Web版は Rust を WebAssembly にして動かす（#16〜）。wasm-bindgen は使わず素の `extern "C"` 関数。
+  i64 は JS の BigInt で受け渡し、wasm から返る値は符号つきなので `BigInt.asUintN(64, x)` で直す。
+  wasm32 では `std::time::Instant` が使えないので `clock.rs` で JS の `performance.now` を `env.now_ms` として読み込む
+- Web版用に Rust へ移植した Lv.1〜4・読み筋（AlphaBeta）・定石・定石名は `tests/test_rust_web_port.py` で Python 版と一致を確認。
+  Lv.2/3 はランダムに選ぶので「最高点の手の一覧」の一致を見る。対称な局面でも小数の足し算の順で同点にならないことがある
+- auto mode では force push が拒否される。リベースしたブランチは新しい名前で push して PR を出す
 - PyO3 0.22 のマクロに clippy::useless_conversion が誤反応するので lib.rs の python モジュールで allow している
 - 定石は勝率で有意差なし（52.1%）。序盤の線形評価関数の精度（R²≈0）が限界 → パターン評価に取り組む理由
 
@@ -85,18 +93,18 @@ data/             学習データ（gitignore 済み、大きいのでコミッ�
 | #12 | CLAUDE.md を追加 | |
 | #13 | パターン評価 step 3: 重みの学習（Rust、前処理つき共役勾配法） | 20万局で学習136秒、中盤 R² 0.634（線形 0.227） |
 | #14 | パターン評価 step 4: 探索に組み込み・採用 | **パターン vs 線形 194勝6敗（97.0%）**。Lv.5 は Rust があれば既定でパターン評価 |
+| #15 | パターン評価 step 5: 定石をパターン評価で作り直し | 新旧比較 53.0%（有意差なし）だがユーザー判断でマージ。主手順が虎→Aubrey に一致 |
+| #16 | Web版を Rust（WebAssembly）化、Pyodide を廃止 | wasm 145KB、ブラウザで1秒9〜10手読み（パターン評価）、Node のテストを CI に追加 |
 
 ## 現在の状況と次のステップ
 
-パターン評価の計画（ユーザー承認済み、段階ごとに PR）:
-1. ✅ パターンの定義と取り出し（#10）
-2. ✅ 学習データ生成（#11）。データは `data/selfplay-200k.bin`（20万局・約1,190万局面、gitignore 済み）
-3. ✅ 学習（#13）。λ=30（1/10/30/100 を比較）。重みは `backend/pattern_weights.bin`（5MB、採用版だけコミットする方針）
-4. ✅ 探索に組み込み・採用（#14）。パターン評価は線形の約1/5の速さ（0.3秒で 9.8手→8.1手）でも 97% 勝ち
-5. ⏳ 定石をパターン評価で作り直し（#15、`build_book.py --patterns`、2分）。新旧の定石の比較は 53.0%（48.1–57.9%）で
-   **有意差なし** → 方針どおりマージせず PR のままユーザーの判断待ち。新しい定石の主手順は 虎 → Aubrey/Tanaka（人間の定石に一致）
-6. Web版への反映（Rust の WebAssembly 化と一緒に。Web版は今は線形評価）
+パターン評価（#10〜#15）と Web版の WebAssembly 化（#16）まで完了。
 
-この作業ではユーザーから「対戦で有意に強くなったら CI 合格後にマージしてよい」「重みはリポジトリにコミット」「step 5 はマージ直前まで」と任されていた。
+- 学習データ `data/selfplay-200k.bin`（20万局、gitignore 済み）。重みは `backend/pattern_weights.bin`（λ=30、採用版だけコミット）
+- Web版の Lv.5 は Rust（wasm）＋パターン評価＋定石。Lv.1〜4 も Rust 移植版（Python 版と同じ手）
+- マージの任され方（この一連の作業）: 対戦で有意に強くなったもの・ブラウザで動作確認できたものは CI 合格後にマージしてよい
 
-次の候補: Web版の WebAssembly 化 / パターン評価での自己対戦データ作り直しと再学習 / 評価の差分計算による高速化
+次の候補（ユーザーと相談して決める）:
+- パターン評価を使った自己対戦でデータを作り直し、再学習（強くなるか arena で確認）
+- パターン評価の差分計算による高速化（打った手で変わるパターンだけ更新）
+- README の先頭に GIF・スクリーンショット

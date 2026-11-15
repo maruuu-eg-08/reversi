@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.mjs",
+    "build:wasm": "cargo build --release --target wasm32-unknown-unknown --manifest-path ../backend_rust/Cargo.toml",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && npm run build:wasm && tsc && node scripts/copy-assets.mjs",
+    "test": "node scripts/smoke-test.mjs",
     "serve": "npm run build && python3 -m http.server 8000 --directory dist"
   },
   "devDependencies": {

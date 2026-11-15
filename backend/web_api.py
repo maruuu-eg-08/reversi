@@ -1,4 +1,7 @@
-"""ブラウザ版（Pyodide）から呼び出すための薄い窓口。
+"""JSON で呼び出す API の Python 版。
+
+以前は Web版がブラウザ内の Python（Pyodide）でこれを呼んでいた。今の Web版は Rust 版エンジンを
+WebAssembly で動かしており、frontend/src/wasm-engine.ts が同じ形の値を返す（このファイルはその基準）。
 
 JavaScript とのやり取りは JSON 文字列で行う。
 64ビットの盤面は JavaScript の Number では精度が足りないため、10進文字列で受け渡す。

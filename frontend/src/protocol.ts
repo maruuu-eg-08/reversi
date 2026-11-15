@@ -51,7 +51,7 @@ export interface WorkerRequest {
 }
 
 export type WorkerMessage =
-  | { type: "ready"; pythonVersion: string }
+  | { type: "ready"; runtime: string }
   | { type: "progress"; message: string }
   | { type: "init-error"; message: string }
   | { type: "result"; id: number; result: string }
