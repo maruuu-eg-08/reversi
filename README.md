@@ -52,24 +52,10 @@ browser WebAssembly runs at roughly half native speed.
 
 ```mermaid
 flowchart LR
-  subgraph Browser
-    UI["app.ts<br/>board UI"] -- postMessage --> W["worker.ts"]
-    W --> WE["wasm-engine.ts"]
-    WE --> WASM["reversi_engine.wasm"]
-  end
-  subgraph "backend_rust (Rust)"
-    S["search.rs<br/>PVS + TT + endgame"] --> P["pattern.rs<br/>pattern evaluation"]
-    S --> B["board.rs<br/>bitboards"]
-    L["levels.rs / book.rs / openings.rs<br/>Lv.1-4, book, names"]
-    T["selfplay.rs + train.rs<br/>data generation + training"]
-  end
-  subgraph "backend (Python)"
-    PY["strong_ai.py, patterns.py ...<br/>reference implementation"]
-    TOOLS["arena.py, gen_data.py,<br/>train_patterns.py, build_book.py"]
-  end
-  WASM -.compiled from.-> S
-  TOOLS -- "import reversi_engine (PyO3)" --> S
-  PY <-. "equality tests" .-> S
+  UI["Web UI<br/>TypeScript + web worker"] -- "WebAssembly" --> R
+  T["Python tools<br/>arena · self-play · training · book"] -- "PyO3" --> R
+  R["Rust engine<br/>PVS search + learned pattern evaluation"]
+  R <-. "tests: identical moves,<br/>scores and node counts" .-> P["Python reference engine"]
 ```
 
 ### 1. Bitboards and search
