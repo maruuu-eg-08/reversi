@@ -16,6 +16,7 @@ jobs:
       - run: pip install ruff
       - run: ruff check .
 
+  # Python だけの環境（ブラウザ版と同じ）でのテスト。Rust 版は入れない
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -28,6 +29,26 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install numpy pytest
       - run: pytest -v
+
+  # Rust 版エンジン: 書式・lint・Rust のテスト、さらに Python 版と結果が一致するかのテスト
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --features python -- -D warnings
+      - run: cargo test --release
+      - run: pip install numpy pytest ./
+      - run: python -c "import reversi_engine"
+      - run: pytest -v
+        working-directory: .
 
   frontend:
     runs-on: ubuntu-latest

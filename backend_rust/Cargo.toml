@@ -1,0 +1,25 @@
+[package]
+name = "reversi_engine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"  # u64::is_multiple_of
+description = "Rust implementation of the Lv.5 reversi search engine, callable from Python"
+publish = false
+
+[lib]
+name = "reversi_engine"
+# cdylib: Python の拡張モジュール用 / rlib: cargo test・ベンチマーク用
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Python から呼ぶための部分（PyO3）。cargo test では使わないので省略可能にしている
+python = ["dep:pyo3"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["abi3-py310"], optional = true }
+rustc-hash = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1

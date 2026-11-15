@@ -12,11 +12,22 @@ Lv.4（AlphaBetaAI）からの主な改良点:
 - 序盤は定石（opening_book.py、事前に深く読んだ手の表）にある局面なら、読まずにその手を打つ
 
 すべて純粋な Python なので、Pyodide（ブラウザ）でもそのまま動く。
+
+探索の部分には Rust 版（backend_rust/、`import reversi_engine`）もある。インストールされていれば
+既定で Rust 版を使う（engine="auto"）。固定の深さで読めば Python 版と同じ手・評価値・探索局面数になり、
+速さだけが違う（tests/test_rust_engine.py で確認）。
 """
 
 import time
 
 from weights import POSITION_WEIGHTS, STRONG_EVAL_COEFFS, WIN_SCORE
+
+try:
+    import reversi_engine as _native
+except ImportError:  # Rust 版をビルドしていない環境（ブラウザ版など）では Python 版だけで動く
+    _native = None
+
+ENGINES = ("auto", "rust", "python")
 
 MASK64 = 0xFFFFFFFFFFFFFFFF
 NOT_EDGE_COLS = 0x7E7E7E7E7E7E7E7E  # a列・h列を除く
@@ -99,14 +110,27 @@ def _row_tables(weights):
     for row in range(8):
         table = []
         for pattern in range(256):
-            table.append(sum(weights[row * 8 + c] for c in range(8) if (pattern >> c) & 1))
+            # sum() は使わず、列の小さい順に1つずつ足す。Python 3.12 以降の sum() は誤差を補正する
+            # 足し方に変わったため、sum() だと Python のバージョンや Rust 版と最後の桁がずれる
+            total = 0.0
+            for c in range(8):
+                if (pattern >> c) & 1:
+                    total += weights[row * 8 + c]
+            table.append(total)
         tables.append(table)
     return tables
 
 
 class StrongAI:
-    def __init__(self, color, time_limit=1.0, max_depth=60, eval_coeffs=None, weights=None, book=None):
-        """book: probe(P, O) で定石の手を返すオブジェクト（OpeningBook）。None なら定石を使わない。"""
+    def __init__(self, color, time_limit=1.0, max_depth=60, eval_coeffs=None, weights=None, book=None, engine="auto"):
+        """
+        book:   probe(P, O) で定石の手を返すオブジェクト（OpeningBook）。None なら定石を使わない。
+        engine: 探索に使う実装。"auto"（Rust 版があれば使う）/ "rust" / "python"
+        """
+        if engine not in ENGINES:
+            raise ValueError(f"engine は {ENGINES} のどれかです: {engine!r}")
+        if engine == "rust" and _native is None:
+            raise ImportError("Rust 版がありません。backend_rust/ で `maturin develop --release` を実行してください")
         self.color = color
         self.time_limit = time_limit
         self.max_depth = max_depth
@@ -124,6 +148,12 @@ class StrongAI:
         self.from_book = False  # 直前の手が定石から選んだものかどうか
         self._deadline = float("inf")
         self._iter_best = None
+        self._native = _native.Searcher(self.coeffs, self.weights) if _native is not None and engine != "python" else None
+
+    @property
+    def engine(self):
+        """実際に使っている探索の実装（"rust" / "python"）。"""
+        return "rust" if self._native is not None else "python"
 
     # ---------- 評価 ----------
     def _pos(self, b):
@@ -307,6 +337,11 @@ class StrongAI:
                 self.last_depth = hit.depth
                 self.last_score = hit.score
                 return hit.move, hit.score, hit.depth
+        if self._native is not None:
+            move, score, depth, self.nodes, self.solved = self._native.search(P, O, self.time_limit, self.max_depth)
+            self.last_depth = depth
+            self.last_score = score
+            return move, score, depth
 
         n_empty = 64 - (P | O).bit_count()
         best_move, best_score, done_depth = 0, 0, 0
@@ -339,6 +374,10 @@ class StrongAI:
         各手を全幅窓で読むので search より遅いが、最善手以外の評価値も正確に分かる。
         同じ評価値の手はマスの番号順に並べ、結果が毎回同じになるようにしている。
         """
+        if self._native is not None:
+            results = self._native.score_moves(P, O, depth)
+            self.nodes = self._native.nodes
+            return results
         self.tt = {}
         self.nodes = 0
         self._deadline = float("inf")
