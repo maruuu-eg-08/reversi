@@ -47,7 +47,7 @@ def test_fast_move_generation_matches_bitboard():
 
 
 def brute_force(P, O, passed=False):
-    """枝刈りなしで終局まで全探索した、手番側から見た最終評価。"""
+    """Exact final score for the side to move by full search without pruning."""
     moves = legal_moves(P, O)
     if not moves:
         if passed:
@@ -64,16 +64,16 @@ def brute_force(P, O, passed=False):
 
 @pytest.mark.parametrize("seed", range(6))
 def test_endgame_solver_is_exact(seed):
-    # 残り 8〜9 マス程度の局面で、完全読みの結果が全探索と一致することを確認する
+    # with about 8-9 empties, the endgame solve must match full search
     b, color = random_position(1000 + seed, 52)
     P, O = side(b, color)
     if not legal_moves(P, O):
-        pytest.skip("手番側に合法手がない局面")
+        pytest.skip("the side to move has no legal move")
     ai = StrongAI(color, time_limit=30)
     move, score, _ = ai.search(P, O)
     assert ai.solved
     assert score == brute_force(P, O)
-    # 選んだ手を打った後の局面も、その評価値どおりになっている
+    # the position after the chosen move has that score too
     f = flips(P, O, move)
     assert -brute_force(O ^ f, P | move | f) == score
 
@@ -91,7 +91,7 @@ def test_respects_time_limit():
 
 def test_single_legal_move_returns_immediately():
     b = BitBoard()
-    b.black, b.white = 1 << 1, 1 << 0  # 白(0,0) 黒(0,1): 白は (0,2) しか打てない
+    b.black, b.white = 1 << 1, 1 << 0  # white (0,0), black (0,1): white's only move is (0,2)
     ai = StrongAI(-1, time_limit=5)
     assert ai.get_move(b) == (0, 2)
     assert ai.nodes == 0
@@ -120,13 +120,13 @@ def test_board_is_not_modified():
     assert (b.black, b.white) == before
 
 
-# ---------- 定石 ----------
+# ---------- opening book ----------
 def test_book_move_is_played_without_searching():
     from opening_book import OpeningBook
 
     b, color = random_position(11, 12)
     P, O = side(b, color)
-    # わざと最善でない手を登録し、読まずにその手を打つことを確かめる
+    # store a deliberately non-best move and check it is played without searching
     scored = StrongAI(color, time_limit=float("inf")).score_moves(P, O, 2)
     worst = scored[-1][0]
     book = OpeningBook()
@@ -171,7 +171,7 @@ def test_auto_patterns_follow_the_engine():
     from strong_ai import _native
 
     ai = create_ai("5", 1)
-    if _native is None:  # ブラウザ版と同じ環境: 線形評価のまま
+    if _native is None:  # same as the browser without Rust: linear evaluation
         assert ai.patterns_path is None
     else:
         assert ai.patterns_path is not None

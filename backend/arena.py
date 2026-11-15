@@ -1,14 +1,14 @@
-"""AI 同士の対戦で強さを測る（並列実行）。
+"""Measure strength by AI-vs-AI matches (in parallel).
 
-同じ序盤（ランダムに数手進めた局面）から先手・後手を入れ替えて2局ずつ打つので、
-先手有利や序盤の運の偏りが打ち消される。勝率には 95% 信頼区間を付ける。
+Each random opening (a few random moves from the start) is played twice with colors swapped,
+cancelling out first-move advantage and opening luck. Win rates come with a 95% confidence interval.
 
-例:
+Examples:
     python arena.py lv5:0.3 lv4 -n 100
     python arena.py lv5:0.3 lv5:0.3:coeffs=tuned.txt -n 200
-    python arena.py lv5:0.3 lv5:0.3:book=off -n 200        # 定石あり vs なし
-    python arena.py lv5:0.3 lv5:0.3:engine=python -n 100   # Rust 版 vs Python 版（同じ時間）
-    python arena.py lv5:0.3 lv5:0.3:patterns=off -n 100   # パターン評価 vs 線形評価
+    python arena.py lv5:0.3 lv5:0.3:book=off -n 200        # with vs without the opening book
+    python arena.py lv5:0.3 lv5:0.3:engine=python -n 100   # Rust vs Python engine (same time)
+    python arena.py lv5:0.3 lv5:0.3:patterns=off -n 100   # pattern vs linear evaluation
 """
 
 import argparse
@@ -21,12 +21,12 @@ from bitboard import BitBoard
 
 
 def make_player(spec, color):
-    """'lv4', 'lv4:6'（深さ）, 'lv5:0.5'（秒）, 'lv5:0.5:coeffs=path' のような文字列から AI を作る。
+    """Create an AI from a spec such as 'lv4', 'lv4:6' (depth), 'lv5:0.5' (seconds) or 'lv5:0.5:coeffs=path'.
 
-    Lv.5 は既定で同梱の定石を使う。'book=off' で使わない、'book=path' で別の定石ファイルを使う。
-    'engine=python' / 'engine=rust' で探索の実装を選ぶ（既定は Rust 版があれば Rust 版）。
-    'patterns=path' で葉の評価にパターン評価（train_patterns.py で学習した重み）を使う。
-    既定（'patterns=auto'）は Rust 版なら同梱の重みでパターン評価、'patterns=off' で線形評価。
+    Lv.5 uses the bundled opening book by default; 'book=off' disables it and 'book=path' uses another file.
+    'engine=python' / 'engine=rust' selects the search implementation (default: Rust if available).
+    'patterns=path' uses pattern evaluation (weights trained by train_patterns.py) at the leaves.
+    The default 'patterns=auto' uses the bundled weights with the Rust engine; 'patterns=off' is linear.
     """
     parts = spec.split(":")
     level = parts[0].removeprefix("lv")
@@ -131,15 +131,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("a")
     parser.add_argument("b")
-    parser.add_argument("-n", "--openings", type=int, default=50, help="序盤の数（対局数はこの2倍）")
+    parser.add_argument("-n", "--openings", type=int, default=50, help="number of openings (twice as many games)")
     parser.add_argument("--opening-moves", type=int, default=6)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("-j", "--processes", type=int, default=None)
     args = parser.parse_args()
     r = run(args.a, args.b, args.openings, args.opening_moves, args.seed, args.processes)
     lo, hi = r["ci95"]
-    print(f"{args.a} vs {args.b}: {r['games']}局  {r['wins']}勝 {r['losses']}敗 {r['draws']}分")
-    print(f"  勝率 {r['score']:.1%} (95%CI {lo:.1%}–{hi:.1%})  平均石差 {r['mean_diff']:+.1f}  Elo差 {r['elo']:+.0f}")
+    print(f"{args.a} vs {args.b}: {r['games']} games  {r['wins']} wins {r['losses']} losses {r['draws']} draws")
+    print(f"  score {r['score']:.1%} (95% CI {lo:.1%}-{hi:.1%})  mean disc difference {r['mean_diff']:+.1f}  Elo difference {r['elo']:+.0f}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-//! 時刻（秒）。ブラウザ（wasm32）では Rust 標準の `Instant` が使えないので、JavaScript の
-//! `performance.now()` を読み込む。それ以外の環境では `Instant` を使う。
+//! Current time in seconds. In the browser (wasm32) Rust's `Instant` is unavailable, so JavaScript's
+//! `performance.now()` is imported instead; elsewhere `Instant` is used.
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn now() -> f64 {
@@ -13,9 +13,9 @@ pub fn now() -> f64 {
 pub fn now() -> f64 {
     #[link(wasm_import_module = "env")]
     extern "C" {
-        /// JavaScript 側で `performance.now()`（ミリ秒）を渡す
+        /// provided by JavaScript as `performance.now()` (milliseconds)
         fn now_ms() -> f64;
     }
-    // SAFETY: 引数のない関数を呼ぶだけ。JavaScript 側で必ず定義する
+    // SAFETY: calls an argument-less function that JavaScript always provides
     unsafe { now_ms() / 1000.0 }
 }

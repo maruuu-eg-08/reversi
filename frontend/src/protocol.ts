@@ -1,30 +1,30 @@
-// メインスレッドと Worker の間でやり取りするデータの型
+// Types of the data exchanged between the main thread and the worker
 
 export type Color = 1 | -1;
 export type Move = [number, number];
 
 export interface GameState {
-  black: string; // 64ビットの盤面（10進文字列）
+  black: string; // 64-bit board (decimal string)
   white: string;
-  color: Color; // 次の手番
+  color: Color; // side to move
   blackCount: number;
   whiteCount: number;
   legal: Move[];
   opponentHasMove: boolean;
-  flipped: Move[]; // 直前の手で裏返った石
+  flipped: Move[]; // discs flipped by the last move
 }
 
 export interface AiMoveResult {
   move: Move | null;
   ms: number;
   nodes: number | null;
-  depth: number | null; // 読んだ深さ（Lv.5 は時間内に到達した深さ）
-  solved: boolean; // 終局まで読み切ったか
-  book: boolean; // 定石（事前に深く読んだ手の表）から選んだ手か
+  depth: number | null; // search depth (for Lv.5, the depth reached within the time limit)
+  solved: boolean; // whether the game was solved to the end
+  book: boolean; // whether the move came from the opening book (moves searched deeply in advance)
 }
 
 export interface OpeningName {
-  name: string | null; // 例: "虎（Tiger）"。どの定石にも当てはまらなければ null
+  name: string | null; // e.g. "Tiger"; null if no named opening matches
 }
 
 export interface MoveScore {

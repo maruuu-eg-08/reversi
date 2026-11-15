@@ -1,21 +1,21 @@
-"""Lv.5: 時間制限つきの強い AI。
+"""Lv.5: a strong, time-limited AI.
 
-Lv.4（AlphaBetaAI）からの主な改良点:
-- 盤面を (手番側 P, 相手側 O) の整数ペアで直接扱い、オブジェクトの生成やメソッド呼び出しを減らして高速化
-- negamax + PVS（最善候補だけ全幅窓、残りはヌルウィンドウで確認）
-- 反復深化 + 時間制限: 制限時間内に読めるところまで読む
-- 置換表に最善手を記録し、次の深さの探索で最初に試す（手の並べ替え）
-- 速さ優先の並べ替え: 相手の着手可能数が少なくなる手から読む
-- 行ごとの重み表を前計算し、位置評価をビットの走査なしで8回の表引きで計算
-- 終盤は残りマスまで読み切り、石差を正確に求める（完全読み）
-- 評価関数に「開放度（空きマスに接する石の数）」を追加
-- 序盤は定石（opening_book.py、事前に深く読んだ手の表）にある局面なら、読まずにその手を打つ
+Main improvements over Lv.4 (AlphaBetaAI):
+- Works directly on the (player P, opponent O) integer pair, avoiding object creation and method calls
+- Negamax + PVS (full window for the first candidate, null-window checks for the rest)
+- Iterative deepening with a time limit: searches as deep as the time allows
+- Transposition table stores the best move, which is tried first at the next depth (move ordering)
+- Fastest-first ordering: moves that leave the opponent fewer replies are searched first
+- Per-row weight tables are precomputed, so the positional score is 8 table lookups instead of a bit scan
+- Endgame is solved exactly to the final disc difference
+- The evaluation adds frontier discs (discs adjacent to an empty square)
+- In the opening, positions found in the opening book (opening_book.py) are played without searching
 
-すべて純粋な Python なので、Pyodide（ブラウザ）でもそのまま動く。
+Everything is pure Python, so it also runs in a browser via Pyodide.
 
-探索の部分には Rust 版（backend_rust/、`import reversi_engine`）もある。インストールされていれば
-既定で Rust 版を使う（engine="auto"）。固定の深さで読めば Python 版と同じ手・評価値・探索局面数になり、
-速さだけが違う（tests/test_rust_engine.py で確認）。
+The search also has a Rust implementation (backend_rust/, `import reversi_engine`). When it is installed it is
+used by default (engine="auto"). At a fixed depth it returns the same move, score and node count as the
+Python version; only the speed differs (checked by tests/test_rust_engine.py).
 """
 
 import functools
@@ -26,29 +26,29 @@ from weights import POSITION_WEIGHTS, STRONG_EVAL_COEFFS, WIN_SCORE
 
 try:
     import reversi_engine as _native
-except ImportError:  # Rust 版をビルドしていない環境（ブラウザ版など）では Python 版だけで動く
+except ImportError:  # without the Rust build (e.g. the browser) the pure-Python search is used
     _native = None
 
 ENGINES = ("auto", "rust", "python")
 
-# 同梱のパターン評価の重み（train_patterns.py で学習、設定と精度は pattern_weights.json）
+# Bundled pattern-evaluation weights (trained by train_patterns.py; settings and accuracy in pattern_weights.json)
 DEFAULT_PATTERNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pattern_weights.bin")
 
 
 @functools.lru_cache(maxsize=4)
 def _load_patterns(path):
-    """パターン評価の重みを読み込む（同じファイルは1回だけ）。"""
-    from patterns import PatternWeights  # patterns → opening_book → strong_ai の循環を避けるためここで読む
+    """Load pattern-evaluation weights (each file only once)."""
+    from patterns import PatternWeights  # imported here to avoid the patterns -> opening_book -> strong_ai cycle
 
     return PatternWeights.load(path)
 
 MASK64 = 0xFFFFFFFFFFFFFFFF
-NOT_EDGE_COLS = 0x7E7E7E7E7E7E7E7E  # a列・h列を除く
-NOT_COL_A = 0xFEFEFEFEFEFEFEFE  # 左シフト後に a列へ回り込んだビットを消す
-NOT_COL_H = 0x7F7F7F7F7F7F7F7F  # 右シフト後に h列へ回り込んだビットを消す
+NOT_EDGE_COLS = 0x7E7E7E7E7E7E7E7E  # excludes the a- and h-files
+NOT_COL_A = 0xFEFEFEFEFEFEFEFE  # clears bits that wrapped onto the a-file after a left shift
+NOT_COL_H = 0x7F7F7F7F7F7F7F7F  # clears bits that wrapped onto the h-file after a right shift
 CORNERS = (1 << 0) | (1 << 7) | (1 << 56) | (1 << 63)
 
-# 評価関数の特徴量の数（位置, 着手可能数, 石数, 開放度）
+# Number of evaluation features (position, mobility, discs, frontier)
 N_FEATURES = 4
 
 
@@ -57,9 +57,9 @@ class SearchTimeout(Exception):
 
 
 def legal_moves(P, O):
-    """手番側 P が打てるマスのビットボード。"""
+    """Bitboard of the squares where the player to move (P) can play."""
     empty = ~(P | O) & MASK64
-    oh = O & NOT_EDGE_COLS  # 横・斜め方向は端の列の相手石を経由できない（行の回り込み防止）
+    oh = O & NOT_EDGE_COLS  # horizontal/diagonal runs may not pass through edge files (prevents row wrap-around)
     moves = 0
     for s, m in ((1, oh), (8, O), (7, oh), (9, oh)):
         t = (P << s) & m
@@ -81,7 +81,7 @@ def legal_moves(P, O):
 
 
 def flips(P, O, x):
-    """P が x（1ビット）に打ったときに裏返る石。"""
+    """Discs flipped when P plays on x (a single bit)."""
     oh = O & NOT_EDGE_COLS
     f = 0
     for s, m in ((1, oh), (8, O), (7, oh), (9, oh)):
@@ -104,7 +104,7 @@ def flips(P, O, x):
 
 
 def neighbors(b):
-    """b の8近傍のマス。"""
+    """The 8-neighborhood of b."""
     return (
         ((b << 1) & NOT_COL_A)
         | ((b >> 1) & NOT_COL_H)
@@ -118,13 +118,13 @@ def neighbors(b):
 
 
 def _row_tables(weights):
-    """各行（8ビット）の石の並び 256 通りについて、重みの合計を前計算する。"""
+    """Precompute the summed weights for all 256 disc patterns of each 8-bit row."""
     tables = []
     for row in range(8):
         table = []
         for pattern in range(256):
-            # sum() は使わず、列の小さい順に1つずつ足す。Python 3.12 以降の sum() は誤差を補正する
-            # 足し方に変わったため、sum() だと Python のバージョンや Rust 版と最後の桁がずれる
+            # Add column by column instead of using sum(): since Python 3.12 sum() uses compensated
+            # summation for floats, which would differ in the last bit across Python versions and from Rust
             total = 0.0
             for c in range(8):
                 if (pattern >> c) & 1:
@@ -139,17 +139,16 @@ class StrongAI:
         self, color, time_limit=1.0, max_depth=60, eval_coeffs=None, weights=None, book=None, engine="auto", patterns=None
     ):
         """
-        book:     probe(P, O) で定石の手を返すオブジェクト（OpeningBook）。None なら定石を使わない。
-        engine:   探索に使う実装。"auto"（Rust 版があれば使う）/ "rust" / "python"
-        patterns: パターン評価の重みファイルのパス。指定すると葉の評価にパターン評価を使う
-                  （手の並べ替えには引き続き位置の重み weights を使う）。None なら線形評価。
-                  "auto" なら、Rust 版で探索する場合だけ同梱の重みを使う（Python 版ではパターン評価が
-                  遅すぎるため。ブラウザ版はこれで線形評価のままになる）
+        book:     object whose probe(P, O) returns an opening-book move (OpeningBook); None disables the book.
+        engine:   search implementation: "auto" (Rust if available) / "rust" / "python".
+        patterns: path to a pattern-evaluation weights file used at the leaves (move ordering still uses the
+                  positional weights). None means the linear evaluation. "auto" uses the bundled weights only
+                  when searching with Rust (pattern evaluation is too slow in pure Python).
         """
         if engine not in ENGINES:
-            raise ValueError(f"engine は {ENGINES} のどれかです: {engine!r}")
+            raise ValueError(f"engine must be one of {ENGINES}: {engine!r}")
         if engine == "rust" and _native is None:
-            raise ImportError("Rust 版がありません。backend_rust/ で `maturin develop --release` を実行してください")
+            raise ImportError("Rust engine not installed; run `maturin develop --release` in backend_rust/")
         self.color = color
         self.time_limit = time_limit
         self.max_depth = max_depth
@@ -162,9 +161,9 @@ class StrongAI:
         self.nodes = 0
         self.last_depth = 0
         self.last_score = 0
-        self.solved = False  # 直前の手が終局まで読み切った結果かどうか
+        self.solved = False  # whether the last move came from an exact endgame solve
         self.book = book
-        self.from_book = False  # 直前の手が定石から選んだものかどうか
+        self.from_book = False  # whether the last move came from the opening book
         self._deadline = float("inf")
         self._iter_best = None
         if patterns == "auto":
@@ -178,10 +177,10 @@ class StrongAI:
 
     @property
     def engine(self):
-        """実際に使っている探索の実装（"rust" / "python"）。"""
+        """The search implementation actually in use ("rust" / "python")."""
         return "rust" if self._native is not None else "python"
 
-    # ---------- 評価 ----------
+    # ---------- evaluation ----------
     def _pos(self, b):
         return (
             self._t0[b & 255]
@@ -195,7 +194,7 @@ class StrongAI:
         )
 
     def evaluate(self, P, O, my_moves=None):
-        """手番側 P から見た評価値。"""
+        """Evaluation from the point of view of the player to move (P)."""
         if my_moves is None:
             my_moves = legal_moves(P, O)
         if self.patterns is not None:
@@ -219,7 +218,7 @@ class StrongAI:
 
     @staticmethod
     def final_score(P, O):
-        """終局時の評価（P から見て）。空きマスは勝った側に加える（一般的なルール）。"""
+        """Score of a finished game for P. Empty squares go to the winner (standard rule)."""
         p = P.bit_count()
         o = O.bit_count()
         empty = 64 - p - o
@@ -229,13 +228,13 @@ class StrongAI:
             return -WIN_SCORE + p - o - empty
         return 0
 
-    # ---------- 探索 ----------
+    # ---------- search ----------
     def _check_time(self):
         if time.perf_counter() > self._deadline:
             raise SearchTimeout
 
     def _ordered(self, P, O, moves, tt_move, depth):
-        """探索する手の順番を決める。"""
+        """Order the moves to search."""
         lst = []
         while moves:
             x = moves & -moves
@@ -243,7 +242,7 @@ class StrongAI:
             lst.append(x)
         if len(lst) > 1:
             if depth >= 3:
-                # 速さ優先: 打った後の相手の着手可能数が少ない手から（同数なら重みの高い手）
+                # fastest-first: fewest opponent replies first (ties broken by the higher positional weight)
                 keyed = []
                 ow = self._order_weight
                 for x in lst:
@@ -297,7 +296,7 @@ class StrongAI:
                 score = -self._negamax(nP, nO, depth - 1, -beta, -alpha)
                 first = False
             else:
-                # PVS: まずヌルウィンドウで「alpha を超えるか」だけ調べ、超えたら読み直す
+                # PVS: first test with a null window whether the move beats alpha; re-search if it does
                 score = -self._negamax(nP, nO, depth - 1, -alpha - 1e-6, -alpha)
                 if alpha < score < beta:
                     score = -self._negamax(nP, nO, depth - 1, -beta, -score)
@@ -310,16 +309,16 @@ class StrongAI:
                         break
 
         if best <= original_alpha:
-            flag = -1  # 上限値
+            flag = -1  # upper bound
         elif best >= beta:
-            flag = 1  # 下限値
+            flag = 1  # lower bound
         else:
             flag = 0
         self.tt[key] = (depth, flag, best, best_move)
         return best
 
     def _root(self, P, O, depth, prev_best):
-        """ルートで全手を読み、(最善手, 評価値) を返す。"""
+        """Search every root move and return (best move, score)."""
         moves = legal_moves(P, O)
         alpha = -float("inf")
         beta = float("inf")
@@ -339,12 +338,12 @@ class StrongAI:
             if score > alpha:
                 alpha = score
                 best_move = x
-                # 途中で時間切れになっても、ここまでに見つけた最善手を使えるよう記録しておく
+                # remember the best move so far in case the time runs out mid-iteration
                 self._iter_best = (best_move, alpha)
         return best_move, alpha
 
     def search(self, P, O):
-        """反復深化。時間切れになったら、最後に読み終えた深さの最善手を返す。"""
+        """Iterative deepening. On timeout, return the best move of the last completed depth."""
         self.tt = {}
         self.nodes = 0
         self.solved = False
@@ -355,7 +354,7 @@ class StrongAI:
         moves = legal_moves(P, O)
         if not moves:
             return 0, 0, 0
-        if moves & (moves - 1) == 0:  # 打てる手が1つだけ
+        if moves & (moves - 1) == 0:  # only one legal move
             self.last_depth = 0
             return moves, 0, 0
         if self.book is not None:
@@ -378,29 +377,29 @@ class StrongAI:
             try:
                 move, score = self._root(P, O, depth, best_move)
             except SearchTimeout:
-                # 前回の最善手を最初に読むので、それより良い手が見つかっていれば採用する
+                # the previous best move is searched first, so any better move found so far is safe to use
                 if self._iter_best is not None and depth > 1:
                     best_move, best_score = self._iter_best
                 break
             best_move, best_score, done_depth = move, score, depth
             if depth >= n_empty:
-                self.solved = True  # 終局まで読み切った
+                self.solved = True  # solved to the end of the game
                 break
-            # 残り時間がわずかなら、次の深さで最初の手すら読み終わらないので始めない
+            # with little time left the next depth could not even finish its first move, so stop
             elapsed = time.perf_counter() - start
             if elapsed > self.time_limit * 0.7:
                 break
-        if best_move == 0:  # 深さ1すら読み終わらなかった場合の保険
+        if best_move == 0:  # fallback if not even depth 1 finished
             best_move = self._ordered(P, O, moves, 0, 0)[0]
         self.last_depth = done_depth
         self.last_score = best_score
         return best_move, best_score, done_depth
 
     def score_moves(self, P, O, depth):
-        """全合法手を depth 手先まで読んだ評価値（手番側 P から見た値）を、良い順に [(手, 評価値)] で返す。
+        """Score every legal move at `depth` (from P's point of view), best first, as [(move, score)].
 
-        各手を全幅窓で読むので search より遅いが、最善手以外の評価値も正確に分かる。
-        同じ評価値の手はマスの番号順に並べ、結果が毎回同じになるようにしている。
+        Each move is searched with a full window, so this is slower than search() but gives exact scores
+        for all moves. Ties are ordered by square index so the result is deterministic.
         """
         if self._native is not None:
             results = self._native.score_moves(P, O, depth)
@@ -417,7 +416,7 @@ class StrongAI:
         results.sort(key=lambda t: (-t[1], t[0]))
         return results
 
-    # ---------- 他の AI と同じインターフェース ----------
+    # ---------- same interface as the other AIs ----------
     def get_move(self, board):
         P = board.black if self.color == 1 else board.white
         O = board.white if self.color == 1 else board.black

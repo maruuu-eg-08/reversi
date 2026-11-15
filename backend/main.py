@@ -5,11 +5,11 @@ from player import HumanPlayer
 
 def setup_game():
     while True:
-        level_choice = input("CPUのレベルを選んでください（1: 弱い, 2: 強い, 3: めっちゃ強い, 4: 超強い）:")
-        turn_choice = input("あなたは先攻(黒)と後攻(白)どちらにしますか？（1: 先攻, 2: 後攻）:")
-        #入力された値が正しい範囲に入っているかどうかのチェック
+        level_choice = input("Choose the CPU level (1: weak, 2: strong, 3: very strong, 4: strongest): ")
+        turn_choice = input("Play first (black) or second (white)? (1: first, 2: second): ")
+        # validate the input
         if not (len(level_choice) == 1 and level_choice in "1234" and len(turn_choice) == 1 and turn_choice in "12") :
-            print("正しい値を入力してください")
+            print("Please enter a valid value")
             continue
 
         if turn_choice == "1":
@@ -28,15 +28,15 @@ def main():
     current_color = 1
 
     while True:
-        #有効手がない場合の処理
+        # no legal move
         if not board.has_valid_move(current_color):
-            print("置ける場所がないため、パスします！")
+            print("No legal move: pass!")
             current_color *= -1
-            #相手も有効手がない場合はゲーム終了
+            # the game ends if the opponent cannot move either
             if not board.has_valid_move(current_color):
-                print("ゲーム終了！")
+                print("Game over!")
                 break
-            else:#相手に有効手がある場合は続ける
+            else:# the opponent can move, so continue
                 continue
         board.display()
 
@@ -47,33 +47,33 @@ def main():
 
         if type(current_player) is not HumanPlayer:
             if current_color == 1:
-                print("黒(AI)が深く考えています・・")
+                print("Black (AI) is thinking...")
             else:
-                print("白(AI)が深く考えています・・")
+                print("White (AI) is thinking...")
         move = current_player.get_move(board)
 
         if move == 'q':
-            print("ゲームを中断しました")
+            print("Game aborted")
             return
 
         row, col = move
         if not board.put_disc(row, col, current_color):
-            print("そこには置けません")
+            print("You cannot play there")
             continue
         else:
-            print("プレイヤーを交代します")
+            print("Switching players")
             current_color *= -1
 
     bc = board.count_discs(1)
     wc = board.count_discs(-1)
-    print(f"黒: {bc}枚, 白: {wc}枚")
+    print(f"Black: {bc}, White: {wc}")
 
     if bc == wc:
-        rs = "引き分けです！"
+        rs = "Draw!"
     elif bc > wc:
-        rs = "黒の勝ちです！"
+        rs = "Black wins!"
     else:
-        rs = "白の勝ちです！"
+        rs = "White wins!"
 
     print(rs)
 

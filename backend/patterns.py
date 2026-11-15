@@ -1,16 +1,17 @@
-"""パターン評価: 辺・隅・斜めなどの石の並びごとに点数を付ける評価関数。
+"""Pattern evaluation: scores for the disc configurations of edges, corners, diagonals and lines.
 
-盤面のいくつかの「形」（パターン）について、そのマスの石の並び（空き / 手番側 / 相手 の3通り）ごとに
-点数の表を持ち、局面に現れた並びの点数を足し合わせて評価値にする。
-同じ形を回転・反転したもの（インスタンス）は同じ表を使う。インスタンスは「見るマスとその順番」が
-違うものをすべて含むので（左右対称な辺なら、左から読むものと右から読むもの）、どんな点数の表でも
-評価値は盤面の回転・反転に対して完全に対称になる。
-序盤と終盤では良い形が違うので、空きマスの数で段階（stage）に分け、段階ごとに別の表を持つ。
+For several board shapes (patterns) there is a table with a score for every configuration of their
+squares (each square empty / player / opponent), and the evaluation is the sum of the scores of the
+configurations present. Rotated and reflected copies of a shape (instances) share one table. The
+instances include every distinct (squares, reading order) pair, so a symmetric edge is read from both
+ends; this makes the evaluation exactly symmetric under rotation and reflection for any table.
+Good shapes differ between the opening and the endgame, so the game is split into stages by the
+number of empty squares, each with its own tables.
 
-Rust 版（backend_rust/src/pattern.rs）と同じ定義・同じ計算をする。
-点数はすべて整数（1/SCALE 石単位）なので、足す順番によらず Python 版と Rust 版で完全に同じ値になる。
+Same definitions and arithmetic as the Rust version (backend_rust/src/pattern.rs). All scores are
+integers (1/SCALE of a disc), so Python and Rust agree exactly regardless of summation order.
 
-盤面は (手番側 P, 相手側 O) の 64 ビット整数。マス i = 行 * 8 + 列（a1 = 0, h8 = 63）。
+Boards are (player P, opponent O) 64-bit integers; square i = row * 8 + col (a1 = 0, h8 = 63).
 """
 
 import struct
@@ -19,34 +20,34 @@ from array import array
 
 from opening_book import parse_square
 
-# 点数の単位。表の値 64 が石1個分
+# Score unit: a table value of 64 is one disc
 SCALE = 64
-# 段階の数。手数（60 - 空きマス）を4手ごとに区切る
+# Number of stages: the move number (60 - empties) in steps of 4
 N_STAGES = 15
 
-# (名前, 基本の向きでのマス)。マスの順番が並びの番号の桁の順番になる
+# (name, squares in the base orientation). The square order is the digit order of the index
 FAMILIES = (
-    ("hv2", "a2 b2 c2 d2 e2 f2 g2 h2"),  # 2行目
-    ("hv3", "a3 b3 c3 d3 e3 f3 g3 h3"),  # 3行目
-    ("hv4", "a4 b4 c4 d4 e4 f4 g4 h4"),  # 4行目
-    ("diag8", "a1 b2 c3 d4 e5 f6 g7 h8"),  # 対角線
+    ("hv2", "a2 b2 c2 d2 e2 f2 g2 h2"),  # 2nd row
+    ("hv3", "a3 b3 c3 d3 e3 f3 g3 h3"),  # 3rd row
+    ("hv4", "a4 b4 c4 d4 e4 f4 g4 h4"),  # 4th row
+    ("diag8", "a1 b2 c3 d4 e5 f6 g7 h8"),  # main diagonal
     ("diag7", "b1 c2 d3 e4 f5 g6 h7"),
     ("diag6", "c1 d2 e3 f4 g5 h6"),
     ("diag5", "d1 e2 f3 g4 h5"),
     ("diag4", "e1 f2 g3 h4"),
-    ("edge2x", "a1 b1 c1 d1 e1 f1 g1 h1 b2 g2"),  # 辺と、隅の斜め隣（X打ち）
+    ("edge2x", "a1 b1 c1 d1 e1 f1 g1 h1 b2 g2"),  # edge plus the two X-squares
     ("corner3x3", "a1 b1 c1 a2 b2 c2 a3 b3 c3"),
     ("corner2x5", "a1 b1 c1 d1 e1 a2 b2 c2 d2 e2"),
 )
 FAMILY_NAMES = tuple(name for name, _ in FAMILIES)
 FAMILY_SIZES = tuple(3 ** len(squares.split()) for _, squares in FAMILIES)
-# 1段階分の表の中で、各パターンの表が始まる位置
+# Offset of each pattern's table within one stage
 FAMILY_OFFSETS = tuple(sum(FAMILY_SIZES[:i]) for i in range(len(FAMILIES)))
 TABLE_SIZE = sum(FAMILY_SIZES)
 
 
 def _map_square(i, s):
-    """マス i を対称変換 s で移す（opening_book.transform と同じ変換）。"""
+    """Map square i by symmetry s (the same transform as opening_book.transform)."""
     r, c = divmod(i, 8)
     if s & 4:
         r, c = c, r
@@ -58,10 +59,10 @@ def _map_square(i, s):
 
 
 def _build_instances():
-    """各パターンを8通りに回転・反転した一覧 [(パターン番号, マスの並び)]。
+    """All 8 rotations/reflections of every pattern, as [(pattern index, squares)].
 
-    マスとその順番がまったく同じになるもの（対角線を転置したものなど）だけを除く。
-    こうすると一覧が回転・反転について閉じるので、評価値が盤面の対称性を必ず保つ。
+    Only exact duplicates (same squares in the same order, e.g. a transposed main diagonal) are removed.
+    The list is then closed under the symmetries, so the evaluation always respects them.
     """
     out = []
     for fam, (_, squares) in enumerate(FAMILIES):
@@ -79,12 +80,12 @@ INSTANCES = _build_instances()
 
 
 def stage_of(n_empty):
-    """空きマスの数から段階を求める（0: 序盤 〜 N_STAGES-1: 終盤）。"""
+    """Stage for a number of empty squares (0: opening ... N_STAGES-1: endgame)."""
     return min((60 - n_empty) // 4, N_STAGES - 1)
 
 
 def indices(P, O):
-    """各インスタンスの並びの番号（Σ 桁 × 3^k、桁は 空き=0 / 手番側=1 / 相手=2）。"""
+    """Configuration index of every instance (sum of digit * 3^k; digit 0 empty / 1 player / 2 opponent)."""
     out = []
     for _, squares in INSTANCES:
         idx = 0
@@ -95,9 +96,9 @@ def indices(P, O):
 
 
 class PatternWeights:
-    """段階ごとの点数の表。値はすべて整数（1/SCALE 石単位）。
+    """Score tables per stage. All values are integers (1/SCALE of a disc).
 
-    stages[st] = (定数項, 着手可能数の差の係数, 全パターンの表を並べた array('h'))
+    stages[st] = (bias, mobility-difference coefficient, all pattern tables concatenated as array('h'))
     """
 
     MAGIC = b"RVPAT\x01"
@@ -106,11 +107,11 @@ class PatternWeights:
         if stages is None:
             stages = [(0, 0, array("h", bytes(2 * TABLE_SIZE))) for _ in range(N_STAGES)]
         if len(stages) != N_STAGES or any(len(t) != TABLE_SIZE for _, _, t in stages):
-            raise ValueError("段階の数か表の大きさが正しくありません")
+            raise ValueError("wrong number of stages or table size")
         self.stages = stages
 
     def evaluate(self, P, O, my_moves, opp_moves):
-        """手番側 P から見た評価値（石数の単位）。my_moves / opp_moves は両者の合法手。"""
+        """Evaluation for the player to move P, in discs. my_moves / opp_moves are both sides' legal moves."""
         n_empty = 64 - (P | O).bit_count()
         bias, mobility, table = self.stages[stage_of(n_empty)]
         total = bias + mobility * (my_moves.bit_count() - opp_moves.bit_count())
@@ -118,7 +119,7 @@ class PatternWeights:
             total += table[FAMILY_OFFSETS[fam] + idx]
         return total / SCALE
 
-    # ---------- 保存・読み込み（Rust 版と同じ形式、リトルエンディアン） ----------
+    # ---------- save / load (same little-endian format as the Rust version) ----------
     def save(self, path):
         with open(path, "wb") as f:
             f.write(self.MAGIC)
@@ -133,17 +134,17 @@ class PatternWeights:
         with open(path, "rb") as f:
             data = f.read()
         if not data.startswith(cls.MAGIC):
-            raise ValueError(f"{path}: パターンの重みファイルではありません")
+            raise ValueError(f"{path}: not a pattern weights file")
         pos = len(cls.MAGIC)
         n_stages, n_families = struct.unpack_from("<HH", data, pos)
         pos += 4
         sizes = struct.unpack_from(f"<{n_families}I", data, pos)
         pos += 4 * n_families
         if (n_stages, sizes) != (N_STAGES, FAMILY_SIZES):
-            raise ValueError(f"{path}: パターンの定義がこのプログラムと違います")
+            raise ValueError(f"{path}: pattern definitions do not match this program")
         expected = pos + N_STAGES * (8 + 2 * TABLE_SIZE)
         if len(data) != expected:
-            raise ValueError(f"{path}: ファイルの大きさが正しくありません（{len(data)} != {expected}）")
+            raise ValueError(f"{path}: unexpected file size ({len(data)} != {expected})")
         stages = []
         for _ in range(N_STAGES):
             bias, mobility = struct.unpack_from("<ii", data, pos)
@@ -156,7 +157,7 @@ class PatternWeights:
 
 
 def _little_endian(table):
-    """array をリトルエンディアンの並びにする（ビッグエンディアンの環境でも同じファイルになるように）。"""
+    """Put the array in little-endian order (so big-endian machines write the same file)."""
     if sys.byteorder == "big":
         table = array("h", table)
         table.byteswap()

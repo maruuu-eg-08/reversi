@@ -12,8 +12,8 @@ dist/
 !docs/**/*.png
 .claude/
 
-# build_book.py の途中結果
+# partial results of build_book.py
 *.cache
 
-# 学習データ（gen_data.py で作る大きなファイル）
+# training data (large files made by gen_data.py)
 /data/

@@ -1,22 +1,22 @@
-//! ビットボードの基本操作。`backend/strong_ai.py` の同名の関数と同じ結果を返す。
+//! Bitboard primitives. Same results as the functions of the same name in `backend/strong_ai.py`.
 //!
-//! 盤面は (手番側 P, 相手側 O) の 64 ビット整数。マス i = 行 * 8 + 列（a1 = 0, h8 = 63）。
+//! Boards are (player P, opponent O) 64-bit integers; square i = row * 8 + col (a1 = 0, h8 = 63).
 
-/// a列・h列を除くマス（横・斜め方向で行をまたいで回り込まないようにする）
+/// Squares outside the a- and h-files (horizontal/diagonal runs must not wrap across rows)
 const NOT_EDGE_COLS: u64 = 0x7E7E_7E7E_7E7E_7E7E;
-/// 左シフト後に a列へ回り込んだビットを消す
+/// Clears bits that wrapped onto the a-file after a left shift
 const NOT_COL_A: u64 = 0xFEFE_FEFE_FEFE_FEFE;
-/// 右シフト後に h列へ回り込んだビットを消す
+/// Clears bits that wrapped onto the h-file after a right shift
 const NOT_COL_H: u64 = 0x7F7F_7F7F_7F7F_7F7F;
 
-/// (シフト量, 相手石のマスク) の組。縦方向(8)だけは端の列を除かない。
+/// (shift, opponent mask) pairs. Only the vertical direction (8) keeps the edge files.
 #[inline(always)]
 fn directions(o: u64) -> [(u32, u64); 4] {
     let oh = o & NOT_EDGE_COLS;
     [(1, oh), (8, o), (7, oh), (9, oh)]
 }
 
-/// 手番側 `p` が打てるマス。
+/// Squares where the player to move `p` can play.
 #[inline]
 pub fn legal_moves(p: u64, o: u64) -> u64 {
     let empty = !(p | o);
@@ -41,7 +41,7 @@ pub fn legal_moves(p: u64, o: u64) -> u64 {
     moves
 }
 
-/// `p` が `x`（1ビット）に打ったときに裏返る石。
+/// Discs flipped when `p` plays on `x` (a single bit).
 #[inline]
 pub fn flips(p: u64, o: u64, x: u64) -> u64 {
     let mut f = 0;
@@ -69,7 +69,7 @@ pub fn flips(p: u64, o: u64, x: u64) -> u64 {
     f
 }
 
-/// `b` の8近傍のマス。
+/// The 8-neighborhood of `b`.
 #[inline]
 pub fn neighbors(b: u64) -> u64 {
     ((b << 1) & NOT_COL_A)
@@ -82,14 +82,14 @@ pub fn neighbors(b: u64) -> u64 {
         | ((b >> 7) & NOT_COL_A)
 }
 
-/// `p` が `x` に打った後の局面を、次の手番側から見た (P, O) で返す。
+/// Position after `p` plays `x`, as (P, O) for the next player to move.
 #[inline]
 pub fn play(p: u64, o: u64, x: u64) -> (u64, u64) {
     let f = flips(p, o, x);
     (o ^ f, p | x | f)
 }
 
-/// 立っているビットを下位から1つずつ取り出す。
+/// Iterate over the set bits from the lowest.
 #[inline]
 pub fn bits(mut m: u64) -> impl Iterator<Item = u64> {
     std::iter::from_fn(move || {
@@ -114,7 +114,7 @@ mod tests {
         1 << ((b[1] - b'1') as u64 * 8 + (b[0] - b'a') as u64)
     }
 
-    /// パスも1手として数える（Python の tests/test_bitboard.py と同じ定義）。
+    /// A pass counts as a ply (same definition as Python's tests/test_bitboard.py).
     fn perft(p: u64, o: u64, depth: u32, passed: bool) -> u64 {
         if depth == 0 {
             return 1;
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn moves_do_not_wrap_around_rows() {
-        // h1 の右隣はビットの上では次の行の a2。a2 の相手石を挟んで b2 に打てたら回り込みのバグ
+        // the bit after h1 is a2 on the next row; capturing a2 by playing b2 would be a wrap-around bug
         let p = sq("h1");
         let o = sq("a2");
         assert_eq!(legal_moves(p, o) & sq("b2"), 0);

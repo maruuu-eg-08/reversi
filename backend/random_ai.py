@@ -6,7 +6,7 @@ class RandomAI:
         self.color = color
 
     def get_move(self, board):
-        """打てる手の中からランダムに1つ選ぶ。打てる手がなければ None。"""
+        """Pick a random legal move, or None if there is none."""
         valid_moves = board.listUp(self.color)
         if not valid_moves:
             return None

@@ -1,19 +1,19 @@
-"""序盤の定石ファイル（opening_book.txt）を作る。
+"""Build the opening book (opening_book.txt).
 
-方針:
-- 開始局面から --full-plies 手目までは、あり得るすべての局面を登録する
-  （arena.py のランダムな序盤や、人間のどんな序盤にも対応できるように）。
-- それより先は「AI が打つ局面」と「相手が打つ局面」で分けて木を広げる。
-    AI が打つ局面   → 深く読んだ最善手だけを先に進める（AI は定石どおりに打つので）
-    相手が打つ局面 → 浅く読んで有力な上位 --replies 手を先に進める（相手は何を打つか分からないので）
-  AI が黒でも白でもよいよう、両方の立場で木を広げる。
-- 登録する最善手は、固定の深さ --depth で読んだ結果。時間制限を使わないので、
-  同じ設定なら毎回まったく同じファイルができる。
+Approach:
+- Every position up to --full-plies is included (so random openings in arena.py and any human
+  opening are covered).
+- Beyond that the tree is expanded differently depending on who is to move:
+    the AI to move       -> follow only the deeply searched best move (the AI plays by the book)
+    the opponent to move -> follow the top --replies moves of a shallow search (any reply is possible)
+  The tree is expanded for both roles, so the AI may play either color.
+- Book moves come from a fixed-depth (--depth) search with no time limit, so the same settings
+  always produce exactly the same file.
 
-計算は数時間かかることがあるため、読み終えた局面は随時キャッシュファイルに追記し、
-中断しても同じコマンドで続きから再開できる。
+The computation can take hours, so finished positions are appended to a cache file and an
+interrupted run resumes from where it stopped when the same command is run again.
 
-使い方:
+Usage:
     python build_book.py --depth 10 --full-plies 6 --plies 10 --replies 3 -j 8
 """
 
@@ -28,7 +28,7 @@ from strong_ai import StrongAI, flips, legal_moves
 
 START = (0x0000000810000000, 0x0000001008000000)
 
-# 局面での立場。BOOK: 手番側が定石を使う AI、ANY: 手番側が（何を打つか分からない）相手
+# Role at a position. BOOK: the side to move is the AI using the book; ANY: it is the opponent (any move)
 BOOK = 1
 ANY = 2
 
@@ -40,7 +40,7 @@ class Settings:
     plies: int = 10
     replies: int = 3
     rank_depth: int = 4
-    # 葉の評価に使うパターン評価の重みファイル（None なら線形評価）
+    # pattern-evaluation weights used at the leaves (None = linear evaluation)
     patterns: str | None = None
 
 
@@ -54,24 +54,24 @@ def _moves(m):
 
 
 def _deep_search(args):
-    """(P, O) を固定の深さで読み、(P, O, 最善手, 評価値) を返す（ワーカープロセスで実行）。"""
+    """Search (P, O) to a fixed depth and return (P, O, best move, score) (runs in a worker process)."""
     P, O, depth, patterns = args
     ai = StrongAI(1, time_limit=float("inf"), max_depth=depth, patterns=patterns)
     move, score, _ = ai.search(P, O)
-    # キャッシュに書く桁数で丸めておく。こうすると、キャッシュから再開した場合と
-    # 最初から計算した場合で、出力ファイルが1文字も違わない
+    # Round to the precision written to the cache, so a run resumed from the cache produces
+    # exactly the same output file as a run from scratch
     return P, O, move, round(score, 4)
 
 
 def _rank_replies(args):
-    """(P, O) の手を浅く読み、良い順の手のリストを返す（ワーカープロセスで実行）。"""
+    """Shallow-search the moves of (P, O) and return them best first (runs in a worker process)."""
     P, O, depth, patterns = args
     ai = StrongAI(1, time_limit=float("inf"), max_depth=depth, patterns=patterns)
     return P, O, [x for x, _ in ai.score_moves(P, O, depth)]
 
 
 class _Cache:
-    """読み終えた局面を1行ずつ追記するファイル。再開時に読み込む。"""
+    """Append-only file of finished positions, read back when resuming."""
 
     def __init__(self, path):
         self.path = path
@@ -80,7 +80,7 @@ class _Cache:
             with open(path, encoding="utf-8") as f:
                 for line in f:
                     parts = line.split()
-                    if len(parts) == 5:  # 書き込み途中で中断された最後の行は捨てる
+                    if len(parts) == 5:  # drop a last line that was cut off mid-write
                         p, o, move, score, depth = parts
                         self.results[(int(p, 16), int(o, 16), int(depth))] = (parse_square(move), float(score))
         self._file = open(path, "a", encoding="utf-8") if path else None
@@ -100,7 +100,7 @@ class _Cache:
 
 
 def _children(P, O, moves):
-    """(P, O) の各手 x の後の局面 (x, 次の手番側, その相手) を返す。"""
+    """For each move x of (P, O), return (x, next side to move, its opponent)."""
     out = []
     for x in moves:
         f = flips(P, O, x)
@@ -109,11 +109,11 @@ def _children(P, O, moves):
 
 
 def _expand(level, full, best, ranked, replies):
-    """1手先の局面と、そこでの立場を求める。
+    """Compute the positions one ply further and their roles.
 
-    level:  正規形の局面 → 立場（BOOK / ANY のビット和）
-    best:   BOOK の局面 → (最善手, 評価値)
-    ranked: ANY の局面 → 良い順の手のリスト（full のときは使わない）
+    level:  canonical position -> roles (bitwise OR of BOOK / ANY)
+    best:   BOOK position -> (best move, score)
+    ranked: ANY position -> moves best first (unused when `full`)
     """
     nxt = {}
 
@@ -125,7 +125,7 @@ def _expand(level, full, best, ranked, replies):
         moves = legal_moves(P, O)
         if not moves:
             if legal_moves(O, P):
-                # パス: 手番だけが入れ替わるので、立場も入れ替わる
+                # pass: only the side to move changes, so the roles swap
                 add(O, P, (BOOK if roles & ANY else 0) | (ANY if roles & BOOK else 0))
             continue
         if full:
@@ -133,7 +133,7 @@ def _expand(level, full, best, ranked, replies):
                 add(nP, nO, BOOK | ANY)
             continue
         if roles & BOOK:
-            move = best[(P, O)][0] if (P, O) in best else moves  # 登録していないのは合法手が1つの局面
+            move = best[(P, O)][0] if (P, O) in best else moves  # positions with a single legal move are not stored
             for _, nP, nO in _children(P, O, [move]):
                 add(nP, nO, ANY)
         if roles & ANY:
@@ -143,13 +143,13 @@ def _expand(level, full, best, ranked, replies):
 
 
 def build(settings, processes=None, cache_path=None, log=print):
-    """設定に従って定石を作り、OpeningBook を返す。"""
+    """Build the book for the given settings and return an OpeningBook."""
     cache = _Cache(cache_path)
     book = OpeningBook()
     stats = {"searched": 0, "cached": 0}
     start = time.time()
 
-    # level: 正規形の局面 → 立場（BOOK / ANY のビット和）
+    # level: canonical position -> roles (bitwise OR of BOOK / ANY)
     cP, cO, _ = canonical(*START)
     level = {(cP, cO): BOOK | ANY}
     try:
@@ -160,8 +160,8 @@ def build(settings, processes=None, cache_path=None, log=print):
                 for (P, O), roles in sorted(level.items()):
                     moves = legal_moves(P, O)
                     if not moves:
-                        continue  # 終局またはパス
-                    if roles & BOOK and moves & (moves - 1):  # 打てる手が1つなら読むまでもない
+                        continue  # game over or pass
+                    if roles & BOOK and moves & (moves - 1):  # no need to search a single legal move
                         need_search.append((P, O))
                     if roles & ANY and not full:
                         need_rank.append((P, O))
@@ -180,7 +180,7 @@ def build(settings, processes=None, cache_path=None, log=print):
                     best[(P, O)] = (move, score)
                     stats["searched"] += 1
                     if i % 200 == 0:
-                        log(f"  ply {ply}: {i}/{len(todo)} 局面を読了 ({time.time() - start:.0f}s)")
+                        log(f"  ply {ply}: {i}/{len(todo)} positions searched ({time.time() - start:.0f}s)")
                 for (P, O), (move, score) in best.items():
                     book.add(P, O, move, score, settings.depth)
 
@@ -192,8 +192,8 @@ def build(settings, processes=None, cache_path=None, log=print):
 
                 level = _expand(level, full, best, ranked, settings.replies)
                 log(
-                    f"ply {ply}: 定石 {len(book)} 局面（新たに読んだ {stats['searched']}, キャッシュ {stats['cached']}）"
-                    f" 次の局面 {len(level)} ({time.time() - start:.0f}s)"
+                    f"ply {ply}: book {len(book)} positions (searched {stats['searched']}, cached {stats['cached']})"
+                    f", next level {len(level)} ({time.time() - start:.0f}s)"
                 )
     finally:
         cache.close()
@@ -202,19 +202,19 @@ def build(settings, processes=None, cache_path=None, log=print):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--depth", type=int, default=Settings.depth, help="最善手を決める読みの深さ")
-    parser.add_argument("--full-plies", type=int, default=Settings.full_plies, help="すべての局面を登録する手数")
-    parser.add_argument("--plies", type=int, default=Settings.plies, help="定石を作る手数")
-    parser.add_argument("--replies", type=int, default=Settings.replies, help="--full-plies より先で考える相手の手の数")
-    parser.add_argument("--rank-depth", type=int, default=Settings.rank_depth, help="相手の手を選ぶときの読みの深さ")
-    parser.add_argument("--patterns", help="葉の評価に使うパターン評価の重みファイル（省略時は線形評価）")
+    parser.add_argument("--depth", type=int, default=Settings.depth, help="search depth for book moves")
+    parser.add_argument("--full-plies", type=int, default=Settings.full_plies, help="include every position up to this ply")
+    parser.add_argument("--plies", type=int, default=Settings.plies, help="build the book up to this ply")
+    parser.add_argument("--replies", type=int, default=Settings.replies, help="opponent replies to follow beyond --full-plies")
+    parser.add_argument("--rank-depth", type=int, default=Settings.rank_depth, help="search depth for ranking opponent replies")
+    parser.add_argument("--patterns", help="pattern-evaluation weights for the leaves (default: linear evaluation)")
     parser.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "opening_book.txt"))
-    parser.add_argument("--cache", help="途中結果のファイル（省略時は <out>.cache）")
+    parser.add_argument("--cache", help="file for partial results (default: <out>.cache)")
     parser.add_argument("-j", "--processes", type=int, default=None)
     args = parser.parse_args()
 
     settings = Settings(args.depth, args.full_plies, args.plies, args.replies, args.rank_depth, args.patterns)
-    # 途中結果は評価関数ごとに別のファイルにする（違う評価関数の結果が混ざらないように）
+    # keep partial results per evaluation function so results never mix
     tag = "" if not args.patterns else "." + os.path.splitext(os.path.basename(args.patterns))[0]
     t0 = time.time()
     book = build(settings, args.processes, args.cache or args.out + tag + ".cache")
@@ -226,7 +226,7 @@ def main():
         f"{len(book)} positions",
     ]
     book.save(args.out, header)
-    print(f"保存: {args.out}（{len(book)} 局面, {time.time() - t0:.0f}s）")
+    print(f"saved {args.out} ({len(book)} positions, {time.time() - t0:.0f}s)")
 
 
 if __name__ == "__main__":

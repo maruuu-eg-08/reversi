@@ -1,9 +1,9 @@
-// ビルド成果物 dist/ に HTML・CSS と、ブラウザで動かす Rust 版エンジン（WebAssembly）と
-// そのデータ（パターン評価の重み・定石）をコピーし、全ファイルの URL にバージョン（内容のハッシュ）を付ける。
+// Copy the HTML, CSS, the Rust engine (WebAssembly) and its data (pattern weights, opening book)
+// into dist/ and add a version (a content hash) to every file URL.
 //
-// GitHub Pages は各ファイルを10分キャッシュするため、そのままだと公開直後に
-// 「新しい HTML + 古い JS」のような組み合わせで読み込まれて壊れることがある。
-// URL にバージョンを付けると、1つの HTML からは必ず同じビルドのファイルだけが読まれる。
+// GitHub Pages caches each file for 10 minutes, so right after a deploy a browser could combine
+// e.g. a new HTML file with old JS and break.
+// With versioned URLs, one HTML file only ever loads files from the same build.
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,7 +14,7 @@ const dist = join(root, "dist");
 const backend = join(root, "..", "backend");
 const wasmDir = join(root, "..", "backend_rust", "target", "wasm32-unknown-unknown", "release");
 
-// Worker（src/worker.ts）が dist/engine/ から読み込むファイル
+// Files the worker (src/worker.ts) loads from dist/engine/
 const ENGINE_FILES = [
   [join(wasmDir, "reversi_engine.wasm"), "reversi_engine.wasm"],
   [join(backend, "pattern_weights.bin"), "pattern_weights.bin"],
@@ -26,7 +26,7 @@ for (const f of ["index.html", "style.css"]) copyFileSync(join(root, f), join(di
 for (const [src, name] of ENGINE_FILES) copyFileSync(src, join(dist, "engine", name));
 console.log(`copied ${ENGINE_FILES.length} engine files to dist/engine`);
 
-// ---------- バージョン付け ----------
+// ---------- versioning ----------
 const jsFiles = readdirSync(dist).filter((f) => f.endsWith(".js")).sort();
 const hash = createHash("sha256");
 for (const f of [...jsFiles, "index.html", "style.css"]) hash.update(readFileSync(join(dist, f)));
@@ -41,18 +41,18 @@ function stamp(file, pattern, replacer, expected) {
     count++;
     return replacer(...m);
   });
-  if (count < expected) throw new Error(`${file}: バージョンを付ける箇所が ${count} 件しかありません（期待 ${expected} 件以上）`);
+  if (count < expected) throw new Error(`${file}: only ${count} place(s) to stamp a version (expected at least ${expected})`);
   writeFileSync(path, out);
 }
 
 stamp("index.html", /(href="style\.css|src="app\.js)"/g, (_, p) => `${p}${v}"`, 2);
-// JS 同士の相対 import（例: from "./engine.js"）
+// relative imports between JS files (e.g. from "./engine.js")
 for (const f of jsFiles) {
   stamp(f, /((?:from|import)\s*["']\.\/[\w-]+\.js)(["'])/g, (_, p, q) => `${p}${v}${q}`, 0);
 }
-// 版の付いていない相対 import が残っていないか確認する
+// make sure no unversioned relative import is left
 for (const f of jsFiles) {
   const left = readFileSync(join(dist, f), "utf8").match(/(?:from|import)\s*["']\.\/[\w-]+\.js["']/g);
-  if (left) throw new Error(`${f}: バージョンなしの import が残っています: ${left.join(", ")}`);
+  if (left) throw new Error(`${f}: unversioned imports remain: ${left.join(", ")}`);
 }
 console.log(`stamped assets with ${v}`);

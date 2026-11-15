@@ -1,10 +1,10 @@
-"""JSON で呼び出す API の Python 版。
+"""Python version of the JSON game API.
 
-以前は Web版がブラウザ内の Python（Pyodide）でこれを呼んでいた。今の Web版は Rust 版エンジンを
-WebAssembly で動かしており、frontend/src/wasm-engine.ts が同じ形の値を返す（このファイルはその基準）。
+The web version used to call this through Python in the browser (Pyodide). It now runs the Rust engine
+as WebAssembly, and frontend/src/wasm-engine.ts returns values of the same shape (this file is the reference).
 
-JavaScript とのやり取りは JSON 文字列で行う。
-64ビットの盤面は JavaScript の Number では精度が足りないため、10進文字列で受け渡す。
+Values are exchanged as JSON strings. 64-bit boards are passed as decimal strings because a
+JavaScript Number cannot hold them exactly.
 """
 
 import json
@@ -46,7 +46,7 @@ def get_state(black, white, color):
 
 
 def play(black, white, color, row, col):
-    """color が (row, col) に打った後の盤面を返す。手番は打った側のまま返すので、交代は呼び出し側で行う。"""
+    """Return the board after `color` plays (row, col); the returned state has the opponent to move."""
     b = _board(black, white)
     flipped = b.get_flip_mask(row, col, color)
     if not b.put_disc(row, col, color):
@@ -64,15 +64,15 @@ def ai_move(black, white, color, level, depth, time_limit=1.0):
         "move": list(move) if move else None,
         "ms": round(elapsed * 1000),
         "nodes": getattr(ai, "nodes", None),
-        # Lv.4 は固定の深さ、Lv.5 は時間内に読み終えた深さ
+        # Lv.4: fixed depth; Lv.5: depth completed within the time limit
         "depth": getattr(ai, "last_depth", getattr(ai, "depth", None)),
         "solved": getattr(ai, "solved", False),
-        "book": getattr(ai, "from_book", False),  # 定石の手かどうか
+        "book": getattr(ai, "from_book", False),  # whether the move came from the opening book
     })
 
 
 def opening(transcript):
-    """棋譜（"f5d6c3..." 形式、パスは含めない）に一致する定石名を返す。"""
+    """Return the opening name matching a record ("f5d6c3...", no passes)."""
     moves = [transcript[i : i + 2] for i in range(0, len(transcript), 2)]
     try:
         op = identify(moves)
@@ -82,7 +82,7 @@ def opening(transcript):
 
 
 def analyze(black, white, color, depth):
-    """手番側の全合法手の評価値（AlphaBetaAI 視点）を返す。"""
+    """Scores of every legal move of the side to move (AlphaBetaAI)."""
     b = _board(black, white)
     ai = AlphaBetaAI(color, max_depth=depth)
     start = time.perf_counter()

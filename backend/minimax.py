@@ -5,7 +5,7 @@ class MinimaxAI:
     def __init__(self, color, max_depth=4):
         self.color = color
         self.max_depth = max_depth
-        # 重み表を1次元のリスト(64要素)にして計算を高速化
+        # weights as a flat 64-element list for speed
         self.weights = [
             30,-12, 0,-1,-1, 0,-12, 30,
             -12,-15,-3,-3,-3,-3,-15,-12,
@@ -26,14 +26,14 @@ class MinimaxAI:
         best_moves = []
 
         for row, col in valid_moves:
-            # 🌟 NumPyのコピーではなく、整数の値を保存するだけ（爆速）
+            # save the two integers instead of copying a NumPy array (much faster)
             orig_black = board.black
             orig_white = board.white
 
             board.put_disc(row, col, self.color)
             score = self.minimax(board, self.max_depth - 1, False, self.color * -1)
             
-            # 🌟 値を戻すだけで盤面復元
+            # restore the board by assigning them back
             board.black = orig_black
             board.white = orig_white
 
@@ -51,7 +51,7 @@ class MinimaxAI:
             
         valid_moves = board.listUp(current_color)
         
-        # パスまたは終局判定
+        # pass or game over
         if not valid_moves:
             if not board.has_valid_move(current_color * -1):
                 return self.evaluate(board)
@@ -77,12 +77,12 @@ class MinimaxAI:
             return min_eval
 
     def evaluate(self, board):
-        # 🌟 NumPyを一切使わずにビット演算とリスト参照でスコア計算
+        # score with bit operations and list lookups, no NumPy
         score = 0
         black = board.black
         white = board.white
         
-        # 各マスの石をチェックして重みを加算
+        # add the weight of every occupied square
         for i in range(64):
             mask = 1 << i
             if black & mask:
@@ -90,5 +90,5 @@ class MinimaxAI:
             elif white & mask:
                 score -= self.weights[i]
         
-        # AIの色に合わせてスコアを返す
+        # from the AI's color's point of view
         return score if self.color == 1 else -score

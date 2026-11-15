@@ -8,12 +8,12 @@ publish = false
 
 [lib]
 name = "reversi_engine"
-# cdylib: Python の拡張モジュール用 / rlib: cargo test・ベンチマーク用
+# cdylib: Python extension module / rlib: cargo test and benchmarks
 crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-# Python から呼ぶための部分（PyO3）。cargo test では使わないので省略可能にしている
+# Python bindings (PyO3). Optional so that cargo test does not need them
 python = ["dep:pyo3"]
 
 [dependencies]

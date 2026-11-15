@@ -1,4 +1,4 @@
-name: Deploy Web版 to GitHub Pages
+name: Deploy the web version to GitHub Pages
 
 on:
   push:

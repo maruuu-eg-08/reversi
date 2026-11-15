@@ -1,7 +1,7 @@
-"""AI が使う評価パラメータをまとめたモジュール（ここを唯一の定義元にする）。"""
+"""Evaluation parameters used by the AIs (the single source of truth)."""
 
-# マスごとの重み（64要素、row * 8 + col の順）。
-# ga_trainer.py で評価係数を学習したときに使った表と同じもの。
+# Per-square weights (64 values, index row * 8 + col).
+# The same table that was used when ga_trainer.py learned the evaluation coefficients.
 POSITION_WEIGHTS = [
     27.87, 10.59, 27.35, 15.77, 15.77, 27.35, 10.59, 27.87,
     10.59,  4.51, 33.77, -25.49, -25.49, 33.77,  4.51, 10.59,
@@ -13,15 +13,15 @@ POSITION_WEIGHTS = [
     27.87, 10.59, 27.35, 15.77, 15.77, 27.35, 10.59, 27.87,
 ]
 
-# 局面の進行度ごとの評価係数（ga_trainer.py の学習結果 best_eval_coeffs.txt）。
-# [序盤Pos, 序盤Mob, 序盤Disc, 中盤Pos, 中盤Mob, 中盤Disc, 終盤Pos, 終盤Mob, 終盤Disc]
+# Evaluation coefficients per game phase (ga_trainer.py result, best_eval_coeffs.txt).
+# [opening pos, mob, disc, midgame pos, mob, disc, endgame pos, mob, disc]
 EVAL_COEFFS = [
     1.11265999, 0.73565285, 0.34340917,
     1.05687437, 0.65200396, 0.43294245,
     -0.0449974, 0.53306816, 1.0032734,
 ]
 
-# Level 2（WeightedAI）用の重み。以前の GA 学習結果（best_final.txt）を 64 マスに展開したもの。
+# Weights for Level 2 (WeightedAI): an earlier GA result (best_final.txt) expanded to 64 squares.
 WEIGHTED_AI_WEIGHTS = [
     50.0, 17.29, 6.81, 11.32, 11.32, 6.81, 17.29, 50.0,
     17.29, 18.43, 38.49, -28.38, -28.38, 38.49, 18.43, 17.29,
@@ -33,19 +33,19 @@ WEIGHTED_AI_WEIGHTS = [
     50.0, 17.29, 6.81, 11.32, 11.32, 6.81, 17.29, 50.0,
 ]
 
-# 終局時の勝敗に付ける評価値（どんな局面評価よりも大きくする）
+# Score given to a won/lost finished game (larger than any positional evaluation)
 WIN_SCORE = 10_000
 
-# Lv.5（StrongAI）用の評価係数。特徴量は [位置, 着手可能数, 石数, 開放度] の4つ × 序盤/中盤/終盤。
-# tune_eval.py で自己対戦 4000 局 × 2 回の反復で学習した値（評価値はおおよそ「最終石差」の単位）。
-# 学習前（Lv.4 の係数＋開放度0）に対して勝率は大きく向上した（README のベンチマーク参照）。
+# Linear-evaluation coefficients for Lv.5 (StrongAI): [position, mobility, discs, frontier] x opening/midgame/endgame.
+# Learned by tune_eval.py from 4000 self-play games, 2 iterations (the score is roughly in final-disc-difference units).
+# Clearly stronger than the starting point (Lv.4 coefficients + zero frontier); see the README benchmarks.
 STRONG_EVAL_COEFFS = [
     -0.0148403, -0.0521191, 4.72193, 5.18808,
     0.0284557, 1.34012, 1.2702, 1.5966,
     0.0176706, 2.25813, 0.871555, 0.799645,
 ]
 
-# 学習前の初期値（比較・再学習用）
+# Starting point before training (for comparison and retraining)
 STRONG_EVAL_COEFFS_INITIAL = [
     1.11265999, 0.73565285, 0.34340917, 0.0,
     1.05687437, 0.65200396, 0.43294245, 0.0,

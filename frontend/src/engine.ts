@@ -1,4 +1,4 @@
-// Worker に処理を依頼し、結果を Promise で受け取るためのクライアント
+// Client that sends work to the worker and receives results as Promises
 import type {
   AiMoveResult,
   Analysis,
@@ -10,7 +10,7 @@ import type {
 } from "./protocol.js";
 
 export class Engine {
-  // ビルド時に付けたバージョン（?v=...）を Worker にも引き継ぎ、古いキャッシュと混ざらないようにする
+  // pass the build version (?v=...) on to the worker so cached old files are never mixed in
   private worker = new Worker(new URL(`./worker.js${new URL(import.meta.url).search}`, import.meta.url), {
     type: "module",
   });
@@ -71,7 +71,7 @@ export class Engine {
   analyze(s: GameState, depth: number) {
     return this.call<Analysis>("analyze", s.black, s.white, s.color, depth);
   }
-  /** 棋譜（"f5d6c3..."、パスは含めない）に一致する定石名 */
+  /** Opening name matching a record ("f5d6c3...", no passes) */
   opening(transcript: string) {
     return this.call<OpeningName>("opening", transcript);
   }

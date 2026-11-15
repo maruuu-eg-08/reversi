@@ -8,7 +8,7 @@ from tune_eval import features, fit, phase_of, self_play
 
 @pytest.mark.parametrize("seed", range(5))
 def test_features_match_evaluate(seed):
-    """学習に使う特徴量と係数の内積が、探索で使う評価値と一致する（学習結果がそのまま使える）。"""
+    """Features dotted with coefficients equal the search evaluation (so learned values can be used as is)."""
     rng = random.Random(seed)
     coeffs = [rng.uniform(-2, 2) for _ in range(3 * N_FEATURES)]
     ai = StrongAI(1, eval_coeffs=coeffs)
@@ -41,11 +41,11 @@ def _random_positions(seed):
 
 
 def test_self_play_labels_are_consistent():
-    """1局から取った局面のラベルは、どれもその対局の最終石差（手番側から見た符号つき）になる。"""
+    """Every label from one game is that game's final disc difference (signed for the side to move)."""
     records = self_play((0, 1, 4, 0.0, None))
     assert records
     finals = {abs(t) for _, _, t in records}
-    assert len(finals) == 1  # すべて同じ対局の最終石差
+    assert len(finals) == 1  # all from the same final result
     assert all(len(f) == N_FEATURES for _, f, _ in records)
 
 

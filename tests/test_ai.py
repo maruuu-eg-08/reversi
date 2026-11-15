@@ -24,7 +24,7 @@ def test_ai_returns_legal_move(level, color):
     before = (b.black, b.white)
     move = ai.get_move(b)
     assert move in b.listUp(color)
-    assert (b.black, b.white) == before  # 探索後に盤面が元に戻っている
+    assert (b.black, b.white) == before  # the board is restored after the search
 
 
 @pytest.mark.parametrize("level", ["1", "2", "3", "4"])
@@ -48,7 +48,7 @@ def test_full_game_completes(level_black, level_white):
         assert b.put_disc(r, c, color)
         color = -color
     else:
-        pytest.fail("ゲームが終わらない")
+        pytest.fail("the game does not end")
     assert b.count_discs(1) + b.count_discs(-1) <= 64
 
 
@@ -62,8 +62,8 @@ def test_final_score_prefers_win_over_any_heuristic():
 
 
 def test_alphabeta_uses_final_score_at_game_over():
-    """終局局面では位置評価ではなく実際の勝敗で評価する（以前は位置評価だけで判断していた）。"""
-    # 黒が評価の低いマス2枚、白が隅1枚。位置評価では白有利だが、石数では黒の勝ち
+    """A finished game is scored by its result, not by position (it used to use the positional score only)."""
+    # black has two poor squares, white one corner: white is better positionally but black wins on discs
     b = make_board(black=[(1, 3), (6, 6)], white=[(0, 0)])
     assert not b.has_valid_move(1) and not b.has_valid_move(-1)
     ai = AlphaBetaAI(1, max_depth=3)
@@ -73,7 +73,7 @@ def test_alphabeta_uses_final_score_at_game_over():
 
 
 def test_alphabeta_avoids_move_that_loses_immediately():
-    """白の手番。(0,2) なら黒を全部取って即勝ち。そちらを選ぶことを確認する。"""
+    """White to move; (0,2) captures every black disc and wins at once. Check that it is chosen."""
     b = make_board(black=[(0, 1)], white=[(0, 0)])
     ai = AlphaBetaAI(-1, max_depth=2)
     assert ai.get_move(b) == (0, 2)

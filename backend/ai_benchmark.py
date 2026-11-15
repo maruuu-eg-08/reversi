@@ -26,21 +26,21 @@ def play_game(level_black, level_white):
 
 
 def run_benchmark(level_a, level_b, trials=100, show_plot=True):
-    """level_a と level_b を、先手・後手を半分ずつ入れ替えて trials 回対戦させる。
+    """Play level_a against level_b `trials` times, swapping colors for half of the games.
 
-    戻り値は level_a から見た石差（level_a の石数 - level_b の石数）の配列。
+    Returns the disc differences from level_a's point of view (level_a discs - level_b discs).
     """
-    print(f"Level {level_a} vs Level {level_b} を {trials}回（先後入れ替え）対戦させます...")
+    print(f"Level {level_a} vs Level {level_b}: {trials} games (colors swapped)...")
     results = []
 
     for i in range(trials):
         if i % 2 == 0:
-            a_score, b_score = play_game(level_a, level_b)  # A が黒（先手）
+            a_score, b_score = play_game(level_a, level_b)  # A plays black (first)
         else:
-            b_score, a_score = play_game(level_b, level_a)  # A が白（後手）
+            b_score, a_score = play_game(level_b, level_a)  # A plays white (second)
         results.append(a_score - b_score)
         if (i + 1) % 10 == 0:
-            print(f"{i+1}試合完了...")
+            print(f"{i+1} games done...")
 
     results = np.array(results)
     wins = int(np.sum(results > 0))
@@ -50,11 +50,11 @@ def run_benchmark(level_a, level_b, trials=100, show_plot=True):
     mean_diff = np.mean(results)
     std_diff = np.std(results)
 
-    print(f"\n=== 統計結果（Level {level_a} 視点）===")
-    print(f"勝ち: {wins} | 負け: {losses} | 引き分け: {draws}")
-    print(f"勝率（引き分けは0.5勝）: {win_rate:.2f}%")
-    print(f"平均石差: {mean_diff:.2f}")
-    print(f"標準偏差: {std_diff:.2f}")
+    print(f"\n=== results (from Level {level_a}'s point of view) ===")
+    print(f"wins: {wins} | losses: {losses} | draws: {draws}")
+    print(f"win rate (draw = 0.5): {win_rate:.2f}%")
+    print(f"mean disc difference: {mean_diff:.2f}")
+    print(f"standard deviation: {std_diff:.2f}")
 
     if show_plot:
         import matplotlib.pyplot as plt
@@ -71,10 +71,10 @@ def run_benchmark(level_a, level_b, trials=100, show_plot=True):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AI同士を対戦させて強さを比較する")
-    parser.add_argument("level_a", nargs="?", default="4", help="比較するAIのレベル (1-4)")
-    parser.add_argument("level_b", nargs="?", default="2", help="対戦相手のレベル (1-4)")
-    parser.add_argument("-n", "--trials", type=int, default=100, help="対戦数")
-    parser.add_argument("--no-plot", action="store_true", help="ヒストグラムを表示しない")
+    parser = argparse.ArgumentParser(description="Compare two AIs by playing them against each other")
+    parser.add_argument("level_a", nargs="?", default="4", help="level of the AI to evaluate (1-4)")
+    parser.add_argument("level_b", nargs="?", default="2", help="level of the opponent (1-4)")
+    parser.add_argument("-n", "--trials", type=int, default=100, help="number of games")
+    parser.add_argument("--no-plot", action="store_true", help="do not show the histogram")
     args = parser.parse_args()
     run_benchmark(args.level_a, args.level_b, args.trials, show_plot=not args.no_plot)

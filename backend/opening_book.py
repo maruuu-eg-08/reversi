@@ -1,15 +1,15 @@
-"""序盤の定石（opening book）: 事前に深く読んでおいた局面と最善手の表。
+"""Opening book: precomputed best moves for opening positions, searched deeply in advance.
 
-リバーシの盤面は回転・反転（8通りの対称変換）で本質的に同じ局面になる。
-そこで各局面を「8通りの変換のうち最小のもの」（正規形）に直して保存し、
-引くときは同じ変換で正規形にしてから、見つかった手を逆変換して元の向きに戻す。
-これで表の大きさは約1/8〜1/4になり、どの向きから打たれても同じ定石が使える。
+A reversi position is essentially the same under its 8 rotations and reflections, so each position is
+stored in canonical form (the smallest of its 8 images). A lookup canonicalizes the query the same
+way and maps the stored move back to the original orientation. This shrinks the table to about
+1/8-1/4 and makes the book work whichever way round the game is played.
 
-盤面は (手番側 P, 相手側 O) の 64ビット整数ペア。マス i = 行 * 8 + 列（a1 = 0, h8 = 63）。
+Boards are (player P, opponent O) 64-bit integers; square i = row * 8 + col (a1 = 0, h8 = 63).
 
-ファイル形式（1行1局面、`#` で始まる行はコメント）:
-    <P 16桁hex> <O 16桁hex> <最善手 例: f5> <評価値> <読んだ深さ>
-P, O, 手はすべて正規形の向き。
+File format (one position per line; lines starting with `#` are comments):
+    <P as 16 hex digits> <O as 16 hex digits> <best move, e.g. f5> <score> <search depth>
+P, O and the move are all in the canonical orientation.
 """
 
 import os
@@ -23,21 +23,21 @@ COLS = "abcdefgh"
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "opening_book.txt")
 
 
-# ---------- 対称変換 ----------
+# ---------- symmetries ----------
 def flip_vertical(b):
-    """上下反転（1行目 ↔ 8行目）。8バイトの並びを逆にするだけ。"""
+    """Flip vertically (row 1 <-> row 8): just reverse the 8 bytes."""
     return int.from_bytes(b.to_bytes(8, "little"), "big")
 
 
 def mirror_horizontal(b):
-    """左右反転（a列 ↔ h列）。各バイト内のビット順を逆にする。"""
+    """Mirror horizontally (a-file <-> h-file): reverse the bits within each byte."""
     b = ((b >> 1) & 0x5555555555555555) | ((b & 0x5555555555555555) << 1)
     b = ((b >> 2) & 0x3333333333333333) | ((b & 0x3333333333333333) << 2)
     return ((b >> 4) & 0x0F0F0F0F0F0F0F0F) | ((b & 0x0F0F0F0F0F0F0F0F) << 4)
 
 
 def transpose(b):
-    """a1-h8 の対角線で折り返す（行と列を入れ替える）。"""
+    """Reflect in the a1-h8 diagonal (swap rows and columns)."""
     t = 0x0F0F0F0F00000000 & (b ^ (b << 28))
     b ^= t ^ (t >> 28)
     t = 0x3333000033330000 & (b ^ (b << 14))
@@ -51,7 +51,7 @@ N_SYMMETRIES = 8
 
 
 def transform(b, s):
-    """対称変換 s（0〜7）を適用する。bit 2: 転置, bit 1: 上下反転, bit 0: 左右反転 の順に行う。"""
+    """Apply symmetry s (0-7): bit 2 transpose, then bit 1 vertical flip, then bit 0 horizontal mirror."""
     if s & 4:
         b = transpose(b)
     if s & 2:
@@ -62,7 +62,7 @@ def transform(b, s):
 
 
 def inverse_transform(b, s):
-    """transform(b, s) を元に戻す。各変換は2回で元に戻るので、逆順に適用すればよい。"""
+    """Undo transform(b, s). Each step is its own inverse, so apply them in reverse order."""
     if s & 1:
         b = mirror_horizontal(b)
     if s & 2:
@@ -73,7 +73,7 @@ def inverse_transform(b, s):
 
 
 def canonical(P, O):
-    """(P, O) の8通りの変換のうち最小のものと、そこへ移す変換番号を返す。"""
+    """Return the smallest of the 8 images of (P, O) and the symmetry that produces it."""
     best = None
     best_s = 0
     for s in range(N_SYMMETRIES):
@@ -83,31 +83,31 @@ def canonical(P, O):
     return best[0], best[1], best_s
 
 
-# ---------- マスの表記 ----------
+# ---------- square names ----------
 def square_name(bit):
     i = bit.bit_length() - 1
     return f"{COLS[i % 8]}{i // 8 + 1}"
 
 
 def parse_square(name):
-    """'f5' → 1ビットだけ立った整数。"""
+    """'f5' -> an integer with a single bit set."""
     name = name.strip().lower()
     if len(name) != 2 or name[0] not in COLS or name[1] not in "12345678":
-        raise ValueError(f"マスの表記が正しくありません: {name!r}")
+        raise ValueError(f"invalid square name: {name!r}")
     return 1 << ((int(name[1]) - 1) * 8 + COLS.index(name[0]))
 
 
-# ---------- 定石の表 ----------
+# ---------- the book ----------
 @dataclass(frozen=True)
 class BookEntry:
-    move: int  # 正規形の向きでの最善手（1ビット）
-    score: float  # 手番側から見た評価値
-    depth: int  # 何手先まで読んだ結果か
+    move: int  # best move in canonical orientation (single bit)
+    score: float  # score for the side to move
+    depth: int  # search depth that produced it
 
 
 @dataclass(frozen=True)
 class BookHit:
-    move: int  # 問い合わせた局面の向きに戻した最善手（1ビット）
+    move: int  # best move in the queried orientation (single bit)
     score: float
     depth: int
 
@@ -125,30 +125,30 @@ class OpeningBook:
         return (cP, cO) in self._entries
 
     def add(self, P, O, move, score, depth):
-        """局面 (P, O) の最善手 move（1ビット、P, O と同じ向き）を登録する。"""
+        """Store `move` (single bit, same orientation as P, O) as the best move of (P, O)."""
         if not move & legal_moves(P, O) or move & (move - 1):
-            raise ValueError(f"{square_name(move)} はこの局面の合法手ではありません")
+            raise ValueError(f"{square_name(move)} is not a legal move in this position")
         cP, cO, s = canonical(P, O)
         self._entries[(cP, cO)] = BookEntry(transform(move, s), float(score), int(depth))
 
     def probe(self, P, O):
-        """局面が表にあれば BookHit を、なければ None を返す。"""
+        """Return a BookHit if the position is in the book, otherwise None."""
         cP, cO, s = canonical(P, O)
         entry = self._entries.get((cP, cO))
         if entry is None:
             return None
         move = inverse_transform(entry.move, s)
-        # 壊れたファイルなどで合法手でない手が入っていても、それを打たないようにする
+        # never return an illegal move, even from a corrupt file
         if not move & legal_moves(P, O):
             return None
         return BookHit(move, entry.score, entry.depth)
 
     def items(self):
-        """(正規形の P, O, BookEntry) を決まった順番で返す。"""
+        """Yield (canonical P, O, BookEntry) in a fixed order."""
         for (P, O), entry in sorted(self._entries.items()):
             yield P, O, entry
 
-    # ---------- 保存・読み込み ----------
+    # ---------- save / load ----------
     def save(self, path, header=()):
         with open(path, "w", encoding="utf-8") as f:
             f.write("# Reversi opening book\n")
@@ -170,13 +170,13 @@ class OpeningBook:
                     p, o, move, score, depth = line.split()
                     book._entries[(int(p, 16), int(o, 16))] = BookEntry(parse_square(move), float(score), int(depth))
                 except ValueError as e:
-                    raise ValueError(f"{path}:{lineno}: 定石ファイルの形式が正しくありません ({e})") from e
+                    raise ValueError(f"{path}:{lineno}: invalid opening book line ({e})") from e
         return book
 
 
 @lru_cache(maxsize=1)
 def default_book():
-    """同梱の定石ファイルを読み込む（1回だけ）。ファイルがなければ空の表を返す。"""
+    """Load the bundled opening book (once). Returns an empty book if the file is missing."""
     if not os.path.exists(DEFAULT_PATH):
         return OpeningBook()
     return OpeningBook.load(DEFAULT_PATH)

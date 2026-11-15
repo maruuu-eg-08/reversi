@@ -1,4 +1,4 @@
-"""自己対戦データの生成（Rust 版エンジンが必要。なければスキップ）。"""
+"""Self-play data generation (needs the Rust engine; skipped without it)."""
 
 import os
 
@@ -26,7 +26,7 @@ def test_records_are_valid(tmp_path):
     params, records = read_records(generate(str(tmp_path / "d.bin"), log=quiet, **SMALL))
     assert params["games"] == SMALL["games"]
     assert {r[4] for r in records} == set(range(SMALL["games"]))
-    # ラベルが正確な最終石差になっていることは Rust 側のテスト（selfplay.rs）で確かめている
+    # that labels are exact final disc differences is tested on the Rust side (selfplay.rs)
     for P, O, score, _, _ in records:
         assert P & O == 0 and legal_moves(P, O)
         assert -64 <= score <= 64
@@ -36,7 +36,7 @@ def test_resume_after_interruption(tmp_path):
     full = generate(str(tmp_path / "full.bin"), log=quiet, **SMALL)
     part = str(tmp_path / "part.bin")
     data = open(full, "rb").read()
-    # 途中（レコードの切れ目でもない位置）で止まったことにする
+    # simulate an interruption in the middle of a record
     with open(part, "wb") as f:
         f.write(data[: len(data) * 2 // 3 + 5])
     generate(part, log=quiet, **SMALL)

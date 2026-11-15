@@ -1,240 +1,234 @@
 # Reversi AI
 
 [![CI](https://github.com/maruuu-eg-08/reversi/actions/workflows/ci.yml/badge.svg)](https://github.com/maruuu-eg-08/reversi/actions/workflows/ci.yml)
+[![Pages](https://github.com/maruuu-eg-08/reversi/actions/workflows/pages.yml/badge.svg)](https://maruuu-eg-08.github.io/reversi/)
 
-ビットボードで実装したリバーシ（オセロ）エンジンと、強さの異なる複数のAIです。
+A reversi (Othello) engine that grew from a Python bitboard toy into a **Rust search engine with a learned
+pattern evaluation**, running in the browser through **WebAssembly**. Every strength claim below is
+backed by head-to-head matches with 95% confidence intervals.
 
-**▶ ブラウザで遊ぶ: https://maruuu-eg-08.github.io/reversi/**
+**▶ Play it in your browser: https://maruuu-eg-08.github.io/reversi/**
 
-Rust で書いた探索エンジン（パターン評価）を WebAssembly にしてブラウザ内で実行しているので、サーバーなしで動きます。
-あなたの番では、打てる各マスを AI が読んだ評価値をヒートマップで表示します（対局中にオン/オフ可能）。
-「一手戻す」で待ったができ、棋譜は「f5d6c3…」形式でコピーできます。
-序盤は Lv.5 が事前に解析した定石で即答し、打っている定石の名前（虎・牛・ローズなど）も表示します。
+<p align="center">
+  <img src="docs/images/screenshot-desktop.png" alt="The web version: board with a score heatmap on every legal move, game settings and the AI analysis panel" width="72%">
+  &nbsp;
+  <img src="docs/images/screenshot-mobile-dark.png" alt="The same game on a phone in dark mode" width="22%">
+</p>
 
-## 特徴
+On your turn every legal move is searched and colored by its score (green = good, red = bad).
+You can undo moves, copy the game record, and see the name of the opening being played.
 
-- **ビットボード盤面**：盤面を64ビット整数2つで表現し、シフト演算で合法手生成・石の反転を行う（perft テストと、素朴な実装との比較テストで正しさを確認）
-- **段階的なAI**
-  | Level | AI | 手法 |
-  |---|---|---|
-  | 1 | RandomAI | 合法手からランダム |
-  | 2 | WeightedAI | マスごとの重み表で1手読み |
-  | 3 | MinimaxAI | ミニマックス探索（深さ4） |
-  | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け。終局局面は実際の勝敗で評価 |
-  | 5 | StrongAI | 時間制限つき反復深化＋PVS、終盤は完全読み、序盤は定石。評価は**パターン評価**（Rust 版使用時・Web版。下記） |
-- **Rust 版エンジン**：探索・評価・合法手生成を Rust に移植し、PyO3 で Python から呼び出す（`backend_rust/`）。Python 版と探索局面数まで完全に一致したまま約80倍高速
-- **パターン評価**：辺・隅・斜めなど11種類の形（回転・反転で84個）の石の並びごとの点数を、自己対戦20万局（約1,190万局面）から学習。今の線形評価に **97.0% 勝ち**（`patterns.py`, `pattern.rs`, `train.rs`）
-- **序盤の定石（opening book）**：序盤の 7,122 局面を 10 手先まで事前に解析した表。盤面の8通りの対称性で局面をまとめて保存（`build_book.py`, `opening_book.py`）。生成は GitHub Actions + PyPy で実行
-- **定石名の判定**：Robert Gatliff の定石リスト（77種）と照合し、どの向きから打っても「虎（Tiger）」などを判定（`openings.py`）
-- **評価関数の学習**：自己対戦の棋譜から最小二乗法で係数を推定（`tune_eval.py`）。以前は遺伝的アルゴリズム（`ga_trainer.py`）
-- **AI同士の対戦ベンチマーク**：先後入れ替え・並列実行・勝率の95%信頼区間つき（`arena.py`）
-- **Web版**：Rust のエンジンを WebAssembly（145KB）にして Web Worker で実行し、TypeScript の UI から呼び出す。Lv.1〜5 すべて Python 版と同じ手を選ぶことをテストで確認。AI の読み筋（全合法手の評価値）を可視化。待った（一手戻す）・棋譜の表示とコピーにも対応
-- **pygame GUI** と **ターミナル版**
+## Highlights
 
-## 使い方
+| | |
+|---|---|
+| **Learned pattern evaluation** | 11 board shapes (84 rotated/reflected instances) × 15 game stages, trained on 200,000 self-play games (11.9 M positions). Beats the previous evaluation **194–6 (97.0%)**. |
+| **Rust engine, bit-identical to Python** | Iterative-deepening PVS with a transposition table and exact endgame solving. **~80× faster** than the Python version while returning the same move, score *and node count*. |
+| **Runs in the browser** | The Rust engine compiled to WebAssembly (145 KB) replaced a 10 MB Python runtime (Pyodide). Lv.5 now reads 9–11 plies per second in the browser. |
+| **Opening book** | 7,081 positions analyzed 10 plies deep, stored once per symmetry class. Its main line rediscovers the human *Tiger → Aubrey* opening. |
+| **Measured, not guessed** | `arena.py` plays every opening with colors swapped and reports win rate, 95% CI and Elo. Results that showed no significant gain are reported as such. |
+| **Tested** | 145 Python tests (including Rust/Python equality), 34 Rust tests, and a Node smoke test of the built WebAssembly, all in CI. |
+
+## Results
+
+<p align="center">
+  <img src="docs/images/head-to-head.png" alt="Bar chart of head-to-head scores with 95% confidence intervals" width="85%">
+</p>
+
+| Match | Games | W–L–D | Score (95% CI) | Mean disc diff |
+|---|---|---|---|---|
+| Lv.5 (0.3 s/move) vs Lv.4 (depth 4) | 100 | 98–2–0 | 98.0% (95.3–100%) | +43.6 |
+| Trained vs untrained linear evaluation (0.3 s) | 100 | 87–13–0 | 87.0% (80.4–93.6%) | +35.3 |
+| Opening book vs no book (0.3 s) | 400 | 202–185–13 | 52.1% (47.2–57.0%), **not significant** | +1.5 |
+| Rust vs Python engine, same 0.3 s | 200 | 193–7–0 | 96.5% (94.0–99.0%) | +40.2 |
+| **Pattern vs linear evaluation** (both Rust, 0.3 s) | 200 | 194–6–0 | **97.0% (94.6–99.4%)** | +32.6 |
+| New web Lv.5 vs old web Lv.5 (1 s, approximate*) | 50 | 49–0–1 | 99.0% (96.2–100%) | +46.1 |
+
+Every opening (a few random moves from the start) is played twice with colors swapped, which cancels
+first-move advantage and opening luck. *The web comparison reproduces both versions natively; in the
+browser WebAssembly runs at roughly half native speed.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    UI["app.ts<br/>board UI"] -- postMessage --> W["worker.ts"]
+    W --> WE["wasm-engine.ts"]
+    WE --> WASM["reversi_engine.wasm"]
+  end
+  subgraph "backend_rust (Rust)"
+    S["search.rs<br/>PVS + TT + endgame"] --> P["pattern.rs<br/>pattern evaluation"]
+    S --> B["board.rs<br/>bitboards"]
+    L["levels.rs / book.rs / openings.rs<br/>Lv.1-4, book, names"]
+    T["selfplay.rs + train.rs<br/>data generation + training"]
+  end
+  subgraph "backend (Python)"
+    PY["strong_ai.py, patterns.py ...<br/>reference implementation"]
+    TOOLS["arena.py, gen_data.py,<br/>train_patterns.py, build_book.py"]
+  end
+  WASM -.compiled from.-> S
+  TOOLS -- "import reversi_engine (PyO3)" --> S
+  PY <-. "equality tests" .-> S
+```
+
+### 1. Bitboards and search
+
+The board is two 64-bit integers (player, opponent); move generation and flipping are shift-and-mask
+operations, verified with perft counts up to 8 plies (390,216 positions) and against a naive implementation.
+
+Lv.5 searches with **negamax + principal variation search**, **iterative deepening** under a time limit,
+a **transposition table** that also orders moves, **fastest-first ordering** (moves that leave the
+opponent fewest replies first) and an **exact endgame solve** once the remaining squares fit in the search.
+
+### 2. Pattern evaluation
+
+The original evaluation was linear in four features (positional weights, mobility, discs, frontier discs).
+It is replaced by tables that score **every configuration of a board shape**:
+
+- **Shapes**: rows 2–4, diagonals of length 4–8, edge + X-squares (10 squares), corner 3×3, corner 2×5.
+- **Exact symmetry by construction**: all 84 distinct (squares, reading order) images under the 8 board
+  symmetries are evaluated, so even a mirror-symmetric edge is read from both ends. The evaluation is
+  therefore exactly symmetric under rotation and reflection *for any weights* (property-tested).
+- **15 stages** by move number, each with its own 167,265 weights, stored as 1/64-disc **integers** so
+  Python and Rust agree exactly whatever the summation order.
+
+**Training data** (`gen_data.py` → Rust `selfplay.rs`): 200,000 self-play games with 8–20 random opening
+moves, depth-6 search in the middlegame and exact solving from 14 empty squares. Each position is labelled
+with the final disc difference under perfect play from the solve point. Games are seeded by game number,
+so the data is identical for any thread count, and an interrupted run resumes where it stopped.
+
+**Training** (`train_patterns.py` → Rust `train.rs`): per stage, L2-regularized least squares
+`(XᵀX + λI) w = Xᵀy` solved with **Jacobi-preconditioned conjugate gradients** on the sparse design
+matrix (86 non-zeros per row). Rows and columns are processed independently and dot products are summed
+in fixed-size chunks, so the result is **deterministic for any number of threads**. Training on 11.9 M
+positions takes 136 s; λ = 30 was chosen on a held-out set (1 game in 10).
+
+<p align="center">
+  <img src="docs/images/r2-by-stage.png" alt="Line chart: validation R² by number of empty squares, pattern evaluation well above the linear evaluation" width="80%">
+</p>
+
+The pattern evaluation is ~5× slower per node and searches about 1.7 plies shallower in the same time,
+yet it wins 97% of games: **evaluating positions well matters more than searching deeper.**
+
+### 3. Rust engine, verified against Python
+
+The hot path of `strong_ai.py` (move generation, evaluation, search) is ported to Rust (`backend_rust/`)
+and exposed to Python with **PyO3**. `StrongAI` uses it automatically when installed and falls back to
+pure Python otherwise.
+
+At a fixed depth both engines return the **same best move, the same score (bit-identical floats) and the
+same number of searched nodes** on random middlegame and endgame positions (`tests/test_rust_engine.py`);
+equal node counts mean move ordering, the transposition table and pruning run in exactly the same order.
+
+| Depth | Python | Rust | Speed-up |
+|---|---|---|---|
+| 8 | 1.50 s/position (0.13 M nodes/s) | 0.018 s/position (10.9 M nodes/s) | ~84× |
+| 10 | 10.0 s/position (0.12 M nodes/s) | 0.129 s/position (9.6 M nodes/s) | ~78× |
+
+Rebuilding the opening book went from **2.5 hours** (GitHub Actions + PyPy) to **2 min 12 s**, producing a
+byte-for-byte identical file.
+
+### 4. WebAssembly in the browser
+
+The same crate compiles to `wasm32-unknown-unknown` with plain `extern "C"` exports (no wasm-bindgen):
+64-bit boards travel as JavaScript `BigInt`s, multi-value results through a shared `f64` buffer, and the
+weights and book are copied in through `alloc`. Rust's `Instant` does not exist in the browser, so the clock
+is imported from JavaScript's `performance.now()`. Lv.1–4, the analysis view, the opening book and opening
+names were ported too, and pytest checks that each returns exactly what the Python version returns.
+
+### 5. Opening book and opening names
+
+`build_book.py` stores every position up to ply 6 and, up to ply 8, the AI's best move against the
+opponent's top 3 replies, each searched 10 plies deep. Positions are stored in **canonical form**
+(the smallest of the 8 symmetric images), cutting the table ~8× and making the book work in any
+orientation. The build is deterministic and resumable.
+
+| Measurement | Result |
+|---|---|
+| Book vs no book (400 games) | 52.1% (47.2–57.0%), not significant |
+| Pattern-evaluation book vs linear-evaluation book (400 games) | 53.0% (48.1–57.9%), not significant |
+| Book move vs 0.3 s search on 400 openings | agree 26%; when different, the short search loses 2.85 discs by a depth-10 evaluation |
+
+The book changes moves a lot but barely changes results: the games start from 6 random moves, so the
+book is used for only 1–2 moves per game. Its practical value is instant opening replies.
+Opening names (77 lines from [Robert Gatliff's list](https://www.samsoft.org.uk/reversi/openings.htm))
+are recognized in any orientation.
+
+## Engineering notes
+
+- **`sum()` changed in Python 3.12.** Float `sum()` became compensated summation, so precomputed weight
+  tables differed in the last bit between Python versions and from Rust. The tables now add in an explicit
+  order, and pattern weights are integers.
+- **Mixed cache on GitHub Pages.** Pages caches files for 10 minutes, so a fresh deploy could load new
+  HTML with old JavaScript. The build stamps a content hash on every asset URL and fails if a relative
+  import is left unversioned.
+- **Long jobs are resumable and reproducible.** Data generation, book building and training are
+  deterministic and can be interrupted and resumed with identical output.
+- **Honest results.** The opening book did not make the engine measurably stronger, and the README says so.
+  That result is what pointed to the evaluation function as the bottleneck.
+
+## Running it
 
 ```bash
 pip install -r requirements.txt
 cd backend
-python gui.py        # GUIで対戦
-python main.py       # ターミナルで対戦
-python arena.py lv5:0.3 lv4 -n 50   # Lv.5（1手0.3秒）と Lv.4 を 50 序盤×先後で100戦
-python tune_eval.py --games 4000      # 自己対戦から評価関数を学習
-python arena.py lv5:0.3 lv5:0.3:book=off -n 200   # 定石あり vs なし
-python arena.py lv5:0.3 lv5:0.3:engine=python -n 100   # Rust 版 vs Python 版
-python evaluate_book.py -n 400                      # 定石の手と0.3秒探索の手を比較
-python build_book.py --depth 10 --full-plies 6 --plies 8   # 定石を生成（8コアで数時間）
+python gui.py                                   # play with a pygame GUI
+python main.py                                  # play in the terminal
+python arena.py lv5:0.3 lv4 -n 50               # 50 openings x 2 colors = 100 games
+python arena.py lv5:0.3 lv5:0.3:patterns=off -n 100   # pattern vs linear evaluation
+python arena.py lv5:0.3 lv5:0.3:engine=python -n 100  # Rust vs Python engine
 ```
 
-### Rust 版エンジンを使う（任意）
-
-Rust（1.87 以上）が入っていれば、次のコマンドで Python から使えるようになります。
-入れると Lv.5・定石の生成・学習・対戦ツールが自動的に Rust 版で動きます（入れなければ Python 版のまま）。
+**Rust engine** (Rust 1.87+): makes Lv.5, training and all tools use the Rust engine.
 
 ```bash
-pip install ./backend_rust          # または: cd backend_rust && maturin develop --release
+pip install ./backend_rust            # or: cd backend_rust && maturin develop --release
 cd backend_rust && cargo test --release
 ```
 
-### Web版をローカルで動かす
+**Reproduce the pattern evaluation** (Rust engine required; ~70 min + ~2 min on 8 cores):
 
-Rust（1.87 以上）と WebAssembly 用のターゲットが必要です。
+```bash
+cd backend
+python gen_data.py --games 200000 --out ../data/selfplay-200k.bin
+python train_patterns.py --data ../data/selfplay-200k.bin --out pattern_weights.bin
+python build_book.py --depth 10 --full-plies 6 --plies 8 --patterns pattern_weights.bin
+```
+
+**Web version** locally:
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cd frontend
-npm install
-npm run serve   # Rust を WebAssembly にビルドして http://localhost:8000 で配信
-npm test        # ビルドしたエンジンを Node で動かして確認
+cd frontend && npm install
+npm run serve      # builds Rust -> WebAssembly and serves http://localhost:8000
+npm test           # runs the built engine in Node
 ```
 
-### テスト・lint
+**Tests and lints**: `pytest`, `ruff check .`, `cargo fmt --check`, `cargo clippy -- -D warnings`.
 
-```bash
-pip install -e ".[dev]"
-pytest
-ruff check .
-```
-
-## ベンチマーク結果
-
-`arena.py` で、ランダムに数手進めた同じ序盤から先手・後手を入れ替えて対戦（CPython, 8並列）。
-定石より上の行の Lv.5 は、定石を導入する前に測定したものです（現在の Lv.5 は既定で定石を使い、`book=off` で無効化）。
-※ 新しい Web版（Rust＋パターン評価＋定石）と以前の Web版（Python・線形評価）を、手元の CPython / Rust で再現して対戦。
-ブラウザの WebAssembly は手元の Rust の約半分の速さ（約57万局面/秒、1秒で9〜10手読み）、以前の Pyodide は手元の CPython より遅いので、目安です。
-
-| 対戦 | 対局数 | 勝-敗-分 | 勝率（95%信頼区間） | 平均石差 |
-|---|---|---|---|---|
-| Lv.5（1手0.3秒） vs Lv.4（深さ4） | 100 | 98-2-0 | 98.0%（95.3–100%） | +43.6 |
-| Lv.5 学習後 vs 学習前（ともに0.3秒） | 100 | 87-13-0 | 87.0%（80.4–93.6%） | +35.3 |
-| Lv.4 vs Lv.2 | 20 | 20-0-0 | – | +39.0 |
-| Lv.5 定石あり vs なし（ともに0.3秒） | 400 | 202-185-13 | 52.1%（47.2–57.0%）有意差なし | +1.5 |
-| Lv.5 Rust 版 vs Python 版（ともに0.3秒） | 200 | 193-7-0 | 96.5%（94.0–99.0%） | +40.2 |
-| Lv.5 パターン評価 vs 線形評価（ともに Rust・0.3秒） | 200 | 194-6-0 | **97.0%（94.6–99.4%）** | +32.6 |
-| 新しい Web版の Lv.5 vs 以前の Web版の Lv.5（1秒、目安※） | 50 | 49-0-1 | **99.0%（96.2–100%）** | +46.1 |
-
-### 評価関数の学習（`tune_eval.py`）
-
-Lv.5 の評価関数は「位置の重み・着手可能数・石数・開放度」の4特徴量 × 序盤/中盤/終盤の線形和です。
-自己対戦で集めた局面の特徴量から、その対局の最終石差を最小二乗法で予測するように係数を求めました。
-
-| 反復 | 自己対戦に使った係数 | 中盤の R² | 前の係数との対戦（0.1秒/手, 200局） |
-|---|---|---|---|
-| 1 | 学習前 | 0.21 | 86.8%（82.1–91.4%） |
-| 2 | 反復1の結果 | 0.32 | 76.0%（70.1–81.9%）← 採用 |
-| 3 | 反復2の結果 | 0.31 | 54.8%（47.9–61.6%）有意差なし → 収束と判断 |
-
-序盤は R² がほぼ 0（序盤の特徴量だけでは勝敗をほとんど説明できない）でした。序盤は探索の深さ（下記の定石）で補っています。
-
-### パターン評価（`patterns.py` / `backend_rust/src/pattern.rs`, `train.rs`）
-
-線形評価（位置の重み・着手可能数・石数・開放度の4つ）に代えて、**石の並びの形ごとの点数**を学習しました。
-
-- **パターン**：2〜4行目、対角線（4〜8マス）、辺＋X打ち（10マス）、隅の3×3、隅の2×5 の11種類。
-  回転・反転したもののうち「見るマスとその順番」が違うものをすべて含めた **84個** を見る。
-  左右対称な形も両方向から読むので、**どんな重みでも評価値が盤面の回転・反転に対して厳密に対称**（テストで確認）
-- **段階**：手数を4手ごとに15段階に分け、段階ごとに別の表（1段階 167,265 個の重み）
-- **整数の重み**（1/64 石単位）：Python 版と Rust 版で、足す順番によらず評価値が完全に一致
-- **学習データ**：Rust 版で自己対戦20万局（序盤はランダム8〜20手、中盤は深さ6、空き14マスから完全読み）。
-  各局面の正解は「そこから双方最善を尽くしたときの最終石差」（`gen_data.py`、約50局/秒、中断から再開可）
-- **学習**：段階ごとに L2 正則化つき最小二乗法を、疎な行列のまま前処理つき共役勾配法で解く（`train_patterns.py`、136秒）。
-  並列でもスレッド数によらず同じ重みになる。10局に1局を検証用に取り分けて精度を測った
-
-| 空きマス | 検証 R²（パターン評価） | 検証 R²（線形評価） |
-|---|---|---|
-| 41〜44 | 0.281 | 0.013 |
-| 29〜32 | **0.634** | 0.227 |
-| 17〜20 | **0.888** | 0.632 |
-| 0〜4 | 0.980 | 0.914 |
-
-パターン評価は計算が重く、同じ0.3秒で読める深さは平均 9.8手 → 8.1手 と浅くなります（Rust 版で約116万局面/秒）。
-それでも線形評価に 194勝6敗 でした。**深く読むことより、局面を正しく評価できることの方が効いている**ことになります。
-Lv.5 は Rust 版エンジンがあれば自動でパターン評価を使います（Web版も Rust を WebAssembly にして使う。Python だけの環境は線形評価）。
-
-### 序盤の定石（`build_book.py`）
-
-開始局面から6手目までに現れる**すべての局面**と、その先8手目までの「AI の最善手 × 相手の有力な上位3手」の局面を、
-深さ10で読んだ最善手として登録しました。パターン評価の導入後、パターン評価で作り直しています（7,081局面、`--patterns pattern_weights.bin`、2分）。
-作り直した定石の主手順（双方が定石どおりに打つ）は d3 c5 f6 f5 e6 f7 … で、人間の定石の **虎 → Aubrey/Tanaka** と一致しました
-（線形評価で作った定石は 縦取り の後に定石から外れていた）。
-
-- **対称性**：盤面を回転・反転した8通りのうち最小のものを正規形として保存し、引くときに手を逆変換する。表の大きさが約1/8になり、どの向きから打たれても同じ定石を使える
-- **再現性と再開**：時間制限ではなく固定の深さで読むので、同じ設定なら1文字も違わないファイルができる。読み終えた局面は随時ファイルに追記し、中断しても続きから再開できる（テストで確認）
-- **計算環境**：最初は GitHub Actions（4コア）＋ PyPy で約2.5時間かかった。Rust 版エンジンでは手元の8コアで **2分12秒** になり、生成したファイルは元のものと1文字も違わなかった（`.github/workflows/build-book.yml` も既定で Rust 版を使う）
-
-**効果の測定**
-
-| 測定 | 結果 |
-|---|---|
-| 対局（上の表、ランダム6手の序盤から） | 52.1%（47.2–57.0%）。強くなったとは言えない |
-| パターン評価で作り直した定石 vs 線形評価の定石（Lv.5 パターン評価・0.3秒、400局） | 53.0%（48.1–57.9%）。有意差なし |
-| 同じ序盤局面400個で、0.3秒探索（平均6.1手読み）の手と定石の手を比較（`evaluate_book.py`） | 一致は26%。違う手の場合、深さ10の評価では平均 2.85 の損（評価値の単位はおおよそ石数） |
-
-深く読むと選ぶ手は大きく変わるのに、勝率にはほとんど表れませんでした。
-序盤の評価関数の精度が低い（R² ≈ 0）ため、深く読んでも「より良い手」にはなりにくいと考えられます。
-現状の定石の主な利点は、序盤を読まずに即答できること（Web版では待ち時間がなくなる）です。
-強さを伸ばすには、評価関数そのものの改善（辺・隅のパターン評価）が次の課題です。
-
-### Rust 版エンジン（`backend_rust/`）
-
-`strong_ai.py` の計算の重い部分（合法手生成・評価関数・反復深化 PVS 探索・置換表）だけを Rust に移植しました。
-学習・定石の生成・対戦などのツールは Python のまま、`StrongAI` が自動的に Rust 版を呼び出します。
-Web版もこのエンジンを WebAssembly にして使います（下の「Web版の仕組み」）。
-
-**Python 版と同じ結果になることを保証**
-
-固定の深さで読んだとき、最善手・評価値（浮動小数点数として完全一致）・**探索した局面数**まで Python 版と一致することを、
-ランダムな局面と終盤の完全読みでテストしています（`tests/test_rust_engine.py`）。
-局面数まで一致するので、手の並べ替え・置換表・枝刈りが同じ順番で動いていることになります。
-
-移植中に、Python 3.12 から `sum()` が浮動小数点数を誤差補正つきで足すようになったため、
-重み表の合計が Python のバージョンによって最後の桁だけ違うことが分かりました。
-足す順番を明示したループに直し、Python 3.10〜3.13・PyPy・Rust のすべてで同じ値になるようにしています。
-
-**速さ**（序盤の8局面、M シリーズ Mac・1コア）
-
-| 深さ | Python 版 | Rust 版 | 倍率 |
-|---|---|---|---|
-| 8 | 1.50 秒/局面（13万局面/秒） | 0.018 秒/局面（1,091万局面/秒） | 約84倍 |
-| 10 | 10.0 秒/局面（12万局面/秒） | 0.129 秒/局面（965万局面/秒） | 約78倍 |
-
-同じ0.3秒でも Rust 版はより深く読めるため、Python 版に 96.5% 勝ちます（上のベンチマーク表）。
-
-## ディレクトリ構成
+## Project layout
 
 ```
-backend/
-  bitboard.py      盤面（ビットボード）
-  weights.py       評価パラメータ（重み表・GA学習済み係数）
-  *_ai.py          各レベルのAI
-  strong_ai.py     Lv.5（反復深化・PVS・完全読み）
-  patterns.py      パターン評価（Python 版）
-  pattern_weights.bin / .json  学習したパターン評価の重みと、学習の設定・精度
-  gen_data.py      自己対戦の学習データ生成 / train_patterns.py 重みの学習
-  opening_book.py  定石の表（対称性による正規化・保存・検索）
-  build_book.py    定石の生成（並列・決定的・中断から再開可）
-  opening_book.txt 生成した定石（7,122局面）
-  openings.py      名前の付いた定石（77種）の判定
-  evaluate_book.py 定石の手と短時間探索の手の比較
-  tune_eval.py     自己対戦データから評価関数を学習
-  arena.py         AI同士の並列対戦・勝率の信頼区間
-  ga_trainer.py    遺伝的アルゴリズムによる係数学習（旧）
-  ai_benchmark.py  AI同士の対戦ベンチマーク（旧）
-  web_api.py       JSON API の Python 版（Web版の wasm-engine.ts が同じ形の値を返す基準）
-  gui.py / main.py GUI版 / ターミナル版
-backend_rust/      Rust 版エンジン（Python から import reversi_engine で使う）
-  src/board.rs     合法手生成・石の反転
-  src/eval.rs      線形評価 / src/pattern.rs パターン評価
-  src/selfplay.rs  自己対戦の学習データ生成 / src/train.rs 重みの学習（共役勾配法）
-  src/search.rs    反復深化 PVS 探索・置換表
-  src/levels.rs    Lv.1〜4 と読み筋（Web版用、Python 版と一致）
-  src/book.rs / openings.rs  定石の検索・定石名の判定（Web版用、Python 版と一致）
-  src/wasm.rs      ブラウザから呼ぶ関数（WebAssembly）/ src/clock.rs 時刻（ブラウザでは performance.now）
-  src/lib.rs       Python バインディング（PyO3）
-tests/             pytest（test_rust_engine.py・test_rust_web_port.py で Python 版との一致を確認）
-frontend/
-  src/app.ts       盤面UI・対局の進行
-  src/worker.ts    WebAssembly のエンジンと重み・定石を読み込む Web Worker
-  src/wasm-engine.ts  エンジンの薄いラッパー（Worker と Node のテストで共用）
-  src/engine.ts    Worker との通信
-  scripts/smoke-test.mjs  ビルドしたエンジンを Node で動かす確認（CI でも実行）
+backend/                Python engine and tools (the reference implementation)
+  bitboard.py           bitboard board
+  strong_ai.py          Lv.5 search (uses the Rust engine when installed)
+  patterns.py           pattern evaluation; pattern_weights.bin(.json) = trained weights and metrics
+  gen_data.py           self-play training data      train_patterns.py   weight training
+  opening_book.py       symmetric opening book       build_book.py       book generator
+  openings.py           named openings               arena.py            AI-vs-AI matches
+  tune_eval.py          linear-evaluation fitting    evaluate_book.py    book analysis
+backend_rust/src/       Rust engine
+  board.rs search.rs eval.rs pattern.rs     search and evaluation
+  selfplay.rs train.rs                      data generation and training
+  levels.rs book.rs openings.rs wasm.rs clock.rs   browser build
+  lib.rs                                    Python bindings (PyO3)
+frontend/               TypeScript UI, WebAssembly worker, build and smoke test
+tests/                  pytest, including Rust/Python equality tests
+.github/workflows/      CI, GitHub Pages deploy, opening-book build
 ```
 
-## Web版の仕組み
+## Roadmap
 
-```
-ブラウザ（メインスレッド）            Web Worker
-  app.ts  ── postMessage ──▶  worker.ts ── wasm-engine.ts ──▶ reversi_engine.wasm（backend_rust）
-   盤面UI   ◀── JSON 結果 ───             pattern_weights.bin（パターン評価）・opening_book.txt（定石）
-```
-
-- 以前は Python 一式（Pyodide、約10MB）をブラウザに読み込んでいた。今は WebAssembly 145KB ＋ 重み（圧縮後 約1.7MB）＋ 定石
-- wasm-bindgen などの追加の道具は使わず、数値だけをやり取りする素の関数として公開している（64ビットの盤面は BigInt で受け渡し）。
-  ブラウザでは Rust 標準の時計が使えないので、`performance.now()` を読み込んで持ち時間を測る
-- 移植した Lv.1〜4・読み筋・定石・定石名は、Python 版と同じ結果になることを pytest で、
-  ビルドしたものが本当に動くことを Node のテスト（`npm test`）で確かめている
-
-## 今後の予定
-
-- パターン評価を使った自己対戦でデータを作り直し、学習を繰り返す
-- パターン評価の差分計算（打った手で変わるパターンだけを更新）による高速化
+- Regenerate self-play data with the pattern evaluation and retrain (iterate the learning loop).
+- Incremental pattern updates (only the patterns touched by a move) to search deeper.

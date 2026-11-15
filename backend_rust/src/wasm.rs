@@ -1,12 +1,12 @@
-//! ブラウザ（WebAssembly）から呼ぶ関数。追加の道具（wasm-bindgen など）を使わず、
-//! 数値だけをやり取りする素の関数として公開する。
+//! Functions called from the browser (WebAssembly). Exposed as plain functions that exchange only
+//! numbers, without extra tooling such as wasm-bindgen.
 //!
-//! - 64 ビットの盤面は JavaScript の BigInt としてそのまま受け渡す
-//! - 結果が複数あるときは、`result_ptr()` の位置にある f64 の配列に書き、JavaScript がそこを読む
-//! - 文字列（定石名）は `text_ptr()` の位置に UTF-8 で書き、長さを返す
-//! - 重みファイル・定石ファイルは JavaScript が `alloc` した領域にコピーしてから `load_*` を呼ぶ
+//! - 64-bit boards are passed directly as JavaScript BigInts
+//! - multiple results are written to the f64 array at `result_ptr()`, which JavaScript reads
+//! - strings (opening names) are written as UTF-8 at `text_ptr()` and their length is returned
+//! - weight and book files are copied by JavaScript into memory from `alloc`, then `load_*` is called
 //!
-//! 時刻は JavaScript 側の `env.now_ms`（performance.now）を使う（clock.rs）。
+//! Time comes from JavaScript's `env.now_ms` (performance.now); see clock.rs.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use crate::pattern::PatternWeights;
 use crate::search::Searcher;
 use crate::selfplay::Rng;
 
-/// 結果の配列の大きさ（読み筋は最大 32 手 × 2 + 1）
+/// Size of the result array (the analysis needs at most 32 moves x 2 + 1)
 const RESULT_LEN: usize = 128;
 
 #[derive(Default)]
@@ -42,7 +42,7 @@ fn set_result(values: &[f64]) {
     });
 }
 
-/// `len` バイトの領域を確保して先頭の位置を返す（ファイルを渡すのに使う）
+/// Allocate `len` bytes and return their address (used to pass files in)
 #[no_mangle]
 pub extern "C" fn alloc(len: usize) -> *mut u8 {
     let mut v = Vec::<u8>::with_capacity(len);
@@ -51,19 +51,19 @@ pub extern "C" fn alloc(len: usize) -> *mut u8 {
     ptr
 }
 
-/// `alloc` した領域を返す
+/// Free memory from `alloc`
 ///
 /// # Safety
-/// `ptr` と `len` は `alloc(len)` が返したものでなければならない
+/// `ptr` and `len` must come from `alloc(len)`
 #[no_mangle]
 pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: usize) {
     drop(Vec::from_raw_parts(ptr, 0, len));
 }
 
-/// 呼び出し側が渡した領域をバイト列として読む
+/// View memory provided by the caller as bytes
 ///
 /// # Safety
-/// `ptr` から `len` バイトが読める領域でなければならない
+/// `ptr` must point to `len` readable bytes
 unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     std::slice::from_raw_parts(ptr, len)
 }
@@ -78,10 +78,10 @@ pub extern "C" fn text_ptr() -> *const u8 {
     TEXT.with(|t| t.borrow().as_ptr())
 }
 
-/// パターン評価の重みファイルを読み込む。成功なら 0
+/// Load a pattern-weights file. Returns 0 on success
 ///
 /// # Safety
-/// `ptr` から `len` バイトが読める領域でなければならない
+/// `ptr` must point to `len` readable bytes
 #[no_mangle]
 pub unsafe extern "C" fn load_patterns(ptr: *const u8, len: usize) -> i32 {
     match PatternWeights::from_bytes(bytes(ptr, len)) {
@@ -93,10 +93,10 @@ pub unsafe extern "C" fn load_patterns(ptr: *const u8, len: usize) -> i32 {
     }
 }
 
-/// 定石ファイル（テキスト）を読み込む。成功なら 0
+/// Load an opening-book file (text). Returns 0 on success
 ///
 /// # Safety
-/// `ptr` から `len` バイトが読める領域でなければならない
+/// `ptr` must point to `len` readable bytes
 #[no_mangle]
 pub unsafe extern "C" fn load_book(ptr: *const u8, len: usize) -> i32 {
     let Ok(text) = std::str::from_utf8(bytes(ptr, len)) else {
@@ -125,8 +125,8 @@ fn random_choice(list: &[u64], seed: u64) -> u64 {
     list[Rng::new(seed).below(list.len() as u64) as usize]
 }
 
-/// AI の手（1ビット、打てなければ 0）を返す。`web_api.ai_move` と同じ AI を使う。
-/// 結果の配列: [探索局面数（なければ -1）, 読んだ深さ（なければ -1）, 読み切ったか, 定石の手か]
+/// The AI's move (single bit, 0 if it cannot move), using the same AIs as `web_api.ai_move`.
+/// Result array: [nodes (-1 if none), depth (-1 if none), solved?, book move?]
 #[no_mangle]
 pub extern "C" fn ai_move(
     black: u64,
@@ -171,7 +171,7 @@ pub extern "C" fn ai_move(
     }
 }
 
-/// Lv.5（StrongAI と同じ順番: 打てる手が1つ → 定石 → 探索）
+/// Lv.5 (same order as StrongAI: single legal move -> book -> search)
 fn strong_move(p: u64, o: u64, time_limit: f64) -> u64 {
     let moves = legal(p, o);
     if moves & (moves - 1) == 0 {
@@ -185,7 +185,7 @@ fn strong_move(p: u64, o: u64, time_limit: f64) -> u64 {
             return hit.best_move;
         }
         let eval = Evaluator::new(&params::STRONG_EVAL_COEFFS, &params::POSITION_WEIGHTS)
-            .expect("固定の値なので正しい");
+            .expect("fixed values are valid");
         let mut searcher = Searcher::new(eval);
         if let Some(w) = &s.patterns {
             searcher = searcher.with_patterns(w.clone());
@@ -201,8 +201,8 @@ fn strong_move(p: u64, o: u64, time_limit: f64) -> u64 {
     })
 }
 
-/// 読み筋（Lv.4 と同じ評価で全手を読む）。手の数を返し、結果の配列に
-/// [探索局面数, マス番号1, 評価値1, マス番号2, 評価値2, ...]（良い順）を書く
+/// Analysis (every move scored like Lv.4). Returns the number of moves and writes
+/// [nodes, square1, score1, square2, score2, ...] (best first) to the result array
 #[no_mangle]
 pub extern "C" fn analyze(black: u64, white: u64, color: i32, depth: i32) -> i32 {
     let color = if color == 1 { 1i8 } else { -1i8 };
@@ -217,10 +217,10 @@ pub extern "C" fn analyze(black: u64, white: u64, color: i32, depth: i32) -> i32
     results.len() as i32
 }
 
-/// 定石名を探す。見つかれば名前を `text_ptr()` に書いてそのバイト数を、なければ -1 を返す
+/// Look up the opening name. Writes it to `text_ptr()` and returns its byte length, or -1 if none
 ///
 /// # Safety
-/// `ptr` から `len` バイトが読める領域でなければならない
+/// `ptr` must point to `len` readable bytes
 #[no_mangle]
 pub unsafe extern "C" fn opening(ptr: *const u8, len: usize) -> i32 {
     let Ok(transcript) = std::str::from_utf8(bytes(ptr, len)) else {
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn opening(ptr: *const u8, len: usize) -> i32 {
     }
 }
 
-/// パターン評価の重みを読み込み済みか（0 / 1）
+/// Whether pattern weights are loaded (0 / 1)
 #[no_mangle]
 pub extern "C" fn has_patterns() -> i32 {
     STATE.with(|s| i32::from(s.borrow().patterns.is_some()))
