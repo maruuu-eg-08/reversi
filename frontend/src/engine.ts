@@ -9,7 +9,10 @@ import type {
 } from "./protocol.js";
 
 export class Engine {
-  private worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  // ビルド時に付けたバージョン（?v=...）を Worker にも引き継ぎ、古いキャッシュと混ざらないようにする
+  private worker = new Worker(new URL(`./worker.js${new URL(import.meta.url).search}`, import.meta.url), {
+    type: "module",
+  });
   private nextId = 0;
   private pending = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>();
   readonly ready: Promise<string>;
