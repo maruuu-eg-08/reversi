@@ -68,6 +68,32 @@ impl Record {
     }
 }
 
+/// gen_data.py が書くファイル（ヘッダー＋レコード）を読み込む。
+pub fn read_data_file(path: &std::path::Path) -> std::io::Result<Vec<Record>> {
+    let invalid = |msg: &str| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{}: {msg}", path.display()),
+        )
+    };
+    let data = std::fs::read(path)?;
+    const MAGIC: &[u8] = b"RVDAT\x01";
+    if !data.starts_with(MAGIC) || data.len() < MAGIC.len() + 4 {
+        return Err(invalid("自己対戦データのファイルではありません"));
+    }
+    let n = u32::from_le_bytes(data[MAGIC.len()..MAGIC.len() + 4].try_into().unwrap()) as usize;
+    let body = data
+        .get(MAGIC.len() + 4 + n..)
+        .ok_or_else(|| invalid("ヘッダーが途中で切れています"))?;
+    if body.len() % RECORD_SIZE != 0 {
+        return Err(invalid("レコードが途中で切れています"));
+    }
+    Ok(body
+        .chunks_exact(RECORD_SIZE)
+        .map(Record::from_bytes)
+        .collect())
+}
+
 /// SplitMix64: 小さく速い、再現性のある乱数
 pub struct Rng(u64);
 
