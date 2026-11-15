@@ -1,0 +1,30 @@
+*{
+    border: 1px solid black
+}
+.header {
+    width: 800px;
+    height: 300px;
+}
+
+.main {
+    width: 800px;
+    height:1000px;
+}
+
+.footer {
+    width: 800px;
+    height: 300px;
+}
+
+#board {
+    display: grid;
+
+    grid-template-columns: repeat(8, 50px);
+    grid-template-rows: repeat(8, 50px);
+
+    width: 400px;
+    height: 400px;
+    background-color: #008000;
+    border: 2px solid #333
+}
+
