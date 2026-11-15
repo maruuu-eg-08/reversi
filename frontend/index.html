@@ -37,7 +37,10 @@
             <span class="toggle-track" aria-hidden="true"></span>
             <span>打てるマスに評価値を表示</span>
           </label>
-          <span class="hint">対局中いつでも切り替えられます（キー: E）</span>
+          <button id="undo" class="secondary" type="button" disabled>
+            <span aria-hidden="true">↶</span> 一手戻す
+          </button>
+          <p class="hint keys">キー操作: <kbd>E</kbd> 評価値の表示切替 · <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd> 一手戻す</p>
         </div>
       </section>
 
@@ -104,6 +107,17 @@
             <div><dt>探索局面数</dt><dd id="stat-nodes">–</dd></div>
             <div class="wide"><dt>直前の AI の読み</dt><dd id="stat-depth">–</dd></div>
           </dl>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>棋譜 <span class="label" id="record-count"></span></h2>
+            <button id="copy-record" class="secondary small" type="button" disabled>コピー</button>
+          </div>
+          <ol id="record" class="record" aria-label="これまでの手順"></ol>
+          <p class="hint" id="copy-status" role="status" aria-live="polite">
+            コピーすると「f5d6c3…」形式（パスは省略）でクリップボードに入ります。
+          </p>
         </div>
 
         <p class="footnote">
