@@ -187,3 +187,12 @@ def test_patterns_change_the_evaluation(pattern_file):
     pat = StrongAI(1, engine="rust", patterns=pattern_file)
     assert pat._native.evaluate(P, O) == pat.evaluate(P, O)
     assert pat.evaluate(P, O) != linear.evaluate(P, O)
+
+
+def test_level5_uses_bundled_patterns_with_rust():
+    from ai_manager import create_ai
+    from strong_ai import DEFAULT_PATTERNS
+
+    ai = create_ai("5", 1)
+    assert ai.engine == "rust" and ai.patterns_path == DEFAULT_PATTERNS
+    assert StrongAI(1, engine="python", patterns="auto").patterns_path is None  # Python 版では使わない

@@ -19,6 +19,7 @@ Lv.4（AlphaBetaAI）からの主な改良点:
 """
 
 import functools
+import os
 import time
 
 from weights import POSITION_WEIGHTS, STRONG_EVAL_COEFFS, WIN_SCORE
@@ -29,6 +30,9 @@ except ImportError:  # Rust 版をビルドしていない環境（ブラウザ�
     _native = None
 
 ENGINES = ("auto", "rust", "python")
+
+# 同梱のパターン評価の重み（train_patterns.py で学習、設定と精度は pattern_weights.json）
+DEFAULT_PATTERNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pattern_weights.bin")
 
 
 @functools.lru_cache(maxsize=4)
@@ -138,7 +142,9 @@ class StrongAI:
         book:     probe(P, O) で定石の手を返すオブジェクト（OpeningBook）。None なら定石を使わない。
         engine:   探索に使う実装。"auto"（Rust 版があれば使う）/ "rust" / "python"
         patterns: パターン評価の重みファイルのパス。指定すると葉の評価にパターン評価を使う
-                  （手の並べ替えには引き続き位置の重み weights を使う）。None なら線形評価
+                  （手の並べ替えには引き続き位置の重み weights を使う）。None なら線形評価。
+                  "auto" なら、Rust 版で探索する場合だけ同梱の重みを使う（Python 版ではパターン評価が
+                  遅すぎるため。ブラウザ版はこれで線形評価のままになる）
         """
         if engine not in ENGINES:
             raise ValueError(f"engine は {ENGINES} のどれかです: {engine!r}")
@@ -161,6 +167,9 @@ class StrongAI:
         self.from_book = False  # 直前の手が定石から選んだものかどうか
         self._deadline = float("inf")
         self._iter_best = None
+        if patterns == "auto":
+            use_rust = _native is not None and engine != "python"
+            patterns = DEFAULT_PATTERNS if use_rust and os.path.exists(DEFAULT_PATTERNS) else None
         self.patterns_path = str(patterns) if patterns is not None else None
         self.patterns = _load_patterns(self.patterns_path) if self.patterns_path else None
         self._native = (
