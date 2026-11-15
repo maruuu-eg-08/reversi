@@ -1,27 +1,106 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <meta charset = "utf-8">
-        <title>reversi</title>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-        <div class="footer">
-            <div class="title">
-                <h1>REVERSI</h1>
-            </div>
-            <div class="game-info">
-                <p>今は黒の番です</p>
-                <p>黒：30枚. 白：34枚</p>
-            </div>
-        </div>
-        <div class="main">
-            <div id="board">
-                
-            </div>
-        </div>
-        <div class="footer">
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reversi AI</title>
+    <meta name="description" content="Python製のリバーシAIを、Pyodideでブラウザ内実行。AIの読み筋を可視化できます。" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>Reversi AI</h1>
+      <p class="tagline">
+        Python のαβ探索エンジンを <a href="https://pyodide.org/" target="_blank" rel="noopener">Pyodide</a> でブラウザ内実行
+      </p>
+    </header>
 
+    <main class="layout">
+      <section class="board-area" aria-label="盤面">
+        <div class="board-frame">
+          <div class="coords coords-top" aria-hidden="true">
+            <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+          </div>
+          <div class="coords coords-left" aria-hidden="true">
+            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+          </div>
+          <div id="board" class="board" role="grid" aria-label="リバーシの盤面"></div>
+          <div id="loading" class="loading">
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="loading-text">読み込み中…</p>
+          </div>
         </div>
-    </body>
+      </section>
+
+      <aside class="panel">
+        <div class="scoreboard">
+          <div class="player" id="player-black">
+            <span class="disc disc-black" aria-hidden="true"></span>
+            <div>
+              <div class="player-name">黒 <span class="who" id="who-black"></span></div>
+              <div class="count" id="count-black">2</div>
+            </div>
+          </div>
+          <div class="player" id="player-white">
+            <span class="disc disc-white" aria-hidden="true"></span>
+            <div>
+              <div class="player-name">白 <span class="who" id="who-white"></span></div>
+              <div class="count" id="count-white">2</div>
+            </div>
+          </div>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite">準備中…</p>
+
+        <div class="card">
+          <h2>対局設定</h2>
+          <div class="field">
+            <span class="label">あなたの色</span>
+            <div class="segmented" role="radiogroup" aria-label="あなたの色">
+              <label><input type="radio" name="human-color" value="1" checked /><span>黒（先手）</span></label>
+              <label><input type="radio" name="human-color" value="-1" /><span>白（後手）</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="level">AI の強さ</label>
+            <select id="level">
+              <option value="1">Lv.1 ランダム</option>
+              <option value="2">Lv.2 重み表で1手読み</option>
+              <option value="3">Lv.3 ミニマックス</option>
+              <option value="4" selected>Lv.4 αβ探索</option>
+            </select>
+          </div>
+          <div class="field" id="depth-field">
+            <label class="label" for="depth">読みの深さ <output id="depth-value">4</output> 手</label>
+            <input id="depth" type="range" min="2" max="6" step="1" value="4" />
+          </div>
+          <button id="new-game" class="primary" type="button" disabled>新しい対局</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>AI の読み筋</h2>
+            <label class="switch">
+              <input id="show-analysis" type="checkbox" checked />
+              <span>表示</span>
+            </label>
+          </div>
+          <p class="hint">
+            あなたの番で、打てる各マスを同じ深さで読んだ評価値を表示します。<span class="swatch good"></span>良い〜<span class="swatch bad"></span>悪い
+          </p>
+          <ol id="analysis-list" class="analysis-list"></ol>
+          <dl class="stats">
+            <div><dt>直前の AI 思考時間</dt><dd id="stat-ms">–</dd></div>
+            <div><dt>探索局面数</dt><dd id="stat-nodes">–</dd></div>
+          </dl>
+        </div>
+
+        <p class="footnote">
+          <span id="runtime">Python –</span> ·
+          <a href="https://github.com/maruuu-eg-08/reversi" target="_blank" rel="noopener">ソースコード</a>
+        </p>
+      </aside>
+    </main>
+  </body>
 </html>

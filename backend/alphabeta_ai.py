@@ -11,6 +11,7 @@ class AlphaBetaAI:
         self.eval_coeffs = list(eval_coeffs) if eval_coeffs is not None else EVAL_COEFFS
 
         self.tt = {}  # 置換表
+        self.nodes = 0  # 直前の探索で訪れた局面数（Web版の表示用）
         self.opening_book = {}
 
     def _calc_weight_score(self, bitboard):
@@ -66,6 +67,7 @@ class AlphaBetaAI:
             return self.opening_book[board_state]
 
         self.tt.clear()
+        self.nodes = 0
 
         valid_moves = board.listUp(self.color)
         if not valid_moves:
@@ -89,7 +91,27 @@ class AlphaBetaAI:
 
         return best_move
 
+    def analyze(self, board):
+        """打てる手それぞれの評価値を返す（読み筋の可視化用）。
+
+        get_move は最善手以外の枝を刈り込むので、他の手の正確な点数がわからない。
+        ここでは手ごとに窓を全開にして探索し、全ての手の正確な評価値を求める。
+        戻り値: [((row, col), score), ...] を評価値の高い順に並べたもの
+        """
+        self.tt.clear()
+        self.nodes = 0
+        results = []
+        for r, c in self._order(board.listUp(self.color)):
+            orig_black, orig_white = board.black, board.white
+            board.put_disc(r, c, self.color)
+            score = self.alphabeta(board, self.depth - 1, -float('inf'), float('inf'), False, -self.color)
+            board.black, board.white = orig_black, orig_white
+            results.append(((r, c), score))
+        results.sort(key=lambda item: item[1], reverse=True)
+        return results
+
     def alphabeta(self, board, depth, alpha, beta, is_maximizing, current_color):
+        self.nodes += 1
         state_key = (board.black, board.white, current_color)
         original_alpha = alpha
         original_beta = beta

@@ -1,0 +1,12 @@
+{
+  "name": "reversi-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "serve": "npm run build && python3 -m http.server 8000 --directory dist"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
