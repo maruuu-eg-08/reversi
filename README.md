@@ -1,17 +1,19 @@
 # Reversi AI
 
+[![CI](https://github.com/maruuu-eg-08/reversi/actions/workflows/ci.yml/badge.svg)](https://github.com/maruuu-eg-08/reversi/actions/workflows/ci.yml)
+
 ビットボードで実装したリバーシ（オセロ）エンジンと、強さの異なる複数のAIです。
 
 ## 特徴
 
-- **ビットボード盤面**：盤面を64ビット整数2つで表現し、シフト演算で合法手生成・石の反転を行う（perft で深さ7まで正しさを確認済み）
+- **ビットボード盤面**：盤面を64ビット整数2つで表現し、シフト演算で合法手生成・石の反転を行う（perft テストと、素朴な実装との比較テストで正しさを確認）
 - **段階的なAI**
   | Level | AI | 手法 |
   |---|---|---|
   | 1 | RandomAI | 合法手からランダム |
   | 2 | WeightedAI | マスごとの重み表で1手読み |
   | 3 | MinimaxAI | ミニマックス探索（深さ4） |
-  | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け |
+  | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け。終局局面は実際の勝敗で評価 |
 - **遺伝的アルゴリズムによる評価関数の学習**（`ga_trainer.py`）
 - **AI同士の対戦ベンチマーク**（`ai_benchmark.py`）
 - **pygame GUI** と **ターミナル版**
@@ -23,18 +25,38 @@ pip install -r requirements.txt
 cd backend
 python gui.py        # GUIで対戦
 python main.py       # ターミナルで対戦
-python ai_benchmark.py
+python ai_benchmark.py 4 2 -n 100   # Level 4 と Level 2 を先後入れ替えで100戦
 ```
+
+### テスト・lint
+
+```bash
+pip install -e ".[dev]"
+pytest
+ruff check .
+```
+
+## ベンチマーク結果
+
+| 対戦 | 対局数 | 勝-敗-分 | 平均石差 |
+|---|---|---|---|
+| Level 4 vs Level 2 | 20（先後入れ替え） | 20-0-0 | +39.0 |
 
 ## ディレクトリ構成
 
 ```
-backend/   Python製のエンジン・AI・GUI
-frontend/  Web版（作成中）
+backend/
+  bitboard.py      盤面（ビットボード）
+  weights.py       評価パラメータ（重み表・GA学習済み係数）
+  *_ai.py          各レベルのAI
+  ga_trainer.py    遺伝的アルゴリズムによる係数学習
+  ai_benchmark.py  AI同士の対戦ベンチマーク
+  gui.py / main.py GUI版 / ターミナル版
+tests/             pytest
+frontend/          Web版（作成中）
 ```
 
 ## 今後の予定
 
-- テスト（perft）とCIの整備
 - 反復深化・終盤完全読みによるAI強化
 - ブラウザで遊べるWeb版

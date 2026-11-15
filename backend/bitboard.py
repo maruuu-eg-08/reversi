@@ -109,28 +109,21 @@ class BitBoard:
         AIやGUIから「どこに打てる？」と聞かれた時に、
         打てる場所のリスト [(row, col), (row, col)...] を返す関数
         """
-        
-        
-        # 64マス全部を調べますが、get_flip_maskが爆速なので一瞬で終わります！
+        # 合法手のビットを1つずつ取り出して座標に変換する
         legal = self.get_legal_board(color)
         moves = []
-        if legal == 0: return moves
-        
-        for i in range(64):
-            if (legal >> i) & 1:
-                moves.append((i // 8, i % 8))
-        
+        while legal:
+            low = legal & -legal  # 一番下の1ビットだけ取り出す
+            i = low.bit_length() - 1
+            moves.append((i // 8, i % 8))
+            legal ^= low
         return moves
 
     def count_discs(self, color):
         """
-        石の数を数える関数（Python 3.10未満対応版）
+        石の数を数える関数
         """
-        if color == 1:
-            # bin()で2進数文字列にして、その中の "1" の数を数える
-            return bin(self.black).count('1')
-        else:
-            return bin(self.white).count('1')
+        return (self.black if color == 1 else self.white).bit_count()
         
     def has_valid_move(self, color):
         """
@@ -156,7 +149,8 @@ class BitBoard:
                 tmp = (my_board << shift) & opp_board & mask
             else:
                 tmp = (my_board >> abs(shift)) & opp_board &mask
-            if tmp == 0: continue
+            if tmp == 0:
+                continue
             for _ in range(5):
                 if shift > 0:
                     tmp |= (tmp << shift) & opp_board & mask
@@ -168,13 +162,12 @@ class BitBoard:
                 legal |= (tmp >> abs(shift)) & empty & mask
         return legal
 
-# 🌟 @property をつけることで、gui.py 側は今まで通り board.grid として読み取れます！
+    # 🌟 @property をつけることで、gui.py 側は今まで通り board.grid として読み取れます！
     @property
     def grid(self):
         """
         GUIの描画用に、64ビットの整数を 8x8 のNumPy配列に変換して返す翻訳機
         """
-        import numpy as np # (ファイルの一番上でimportしていればここは不要です)
         grid_array = np.zeros((8, 8), dtype=int)
 
         for row in range(8):

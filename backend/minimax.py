@@ -1,5 +1,5 @@
-from bitboard import BitBoard as board
 import random as rd
+
 
 class MinimaxAI:
     def __init__(self, color, max_depth=4):

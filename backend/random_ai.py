@@ -1,12 +1,13 @@
-from bitboard import BitBoard as board
 import random as rd
-class RandomAI :
+
+
+class RandomAI:
     def __init__(self, color):
         self.color = color
 
-    #main.pyから直接呼ばれる入り口。ここでは現在の盤面から「自分が打てるすべての有効手」をリストアップしてその中からランダムに選んで返す関数
     def get_move(self, board):
+        """打てる手の中からランダムに1つ選ぶ。打てる手がなければ None。"""
         valid_moves = board.listUp(self.color)
-        move = rd.choice(valid_moves)
-
-        return move
+        if not valid_moves:
+            return None
+        return rd.choice(valid_moves)

@@ -1,180 +1,175 @@
-import pygame
 import sys
-import numpy as np
-print("1: numpyまでOK")
 
+import pygame
+
+from ai_manager import create_ai
 from bitboard import BitBoard as Board
-print("2: bitboard import OK")
-
-from alphabeta_ai import AlphaBetaAI
-print("3: alphabeta_ai import OK")
 
 square_size = 80
-screen_size = square_size * 8
+board_px = square_size * 8
+status_height = 50
+screen_size = (board_px, board_px + status_height)
 stone_radius = square_size // 2 - 5
 fps = 60
-green = (34,139,34)
-black = (0,0,0)
-white = (255,255,255)
+green = (34, 139, 34)
+dark_green = (20, 100, 20)
+black = (0, 0, 0)
+white = (255, 255, 255)
 gray = (150, 150, 150)
+hint_color = (60, 170, 60)
 
-# 描画専用の関数（スッキリさせるために上にまとめました）
-def draw_board(screen, board):
-    screen.fill(green)
+
+def draw_board(screen, board, hints=()):
+    """盤面と石、置ける場所のヒントを描画する。"""
+    screen.fill(green, pygame.Rect(0, 0, board_px, board_px))
     for i in range(9):
-        pygame.draw.line(screen, black, (0, i*square_size),(screen_size, i * square_size), 2)
-        pygame.draw.line(screen, black, (i * square_size, 0), (i * square_size, screen_size), 2)
+        pygame.draw.line(screen, black, (0, i * square_size), (board_px, i * square_size), 2)
+        pygame.draw.line(screen, black, (i * square_size, 0), (i * square_size, board_px), 2)
 
+    grid = board.grid  # 8x8 配列への変換は1フレームに1回だけ
     for row in range(8):
         for col in range(8):
-            x = col * square_size + (square_size // 2)
-            y = row * square_size + (square_size // 2)
-            if board.grid[row, col] == 1:
-                pygame.draw.circle(screen, black, (x, y), 35, width = 0)
-            elif board.grid[row, col] == -1:
-                pygame.draw.circle(screen, white, (x, y), 35, width = 0)
+            x = col * square_size + square_size // 2
+            y = row * square_size + square_size // 2
+            if grid[row, col] == 1:
+                pygame.draw.circle(screen, black, (x, y), stone_radius)
+            elif grid[row, col] == -1:
+                pygame.draw.circle(screen, white, (x, y), stone_radius)
+
+    for row, col in hints:
+        x = col * square_size + square_size // 2
+        y = row * square_size + square_size // 2
+        pygame.draw.circle(screen, hint_color, (x, y), 8)
+
+
+def draw_status(screen, font, board, message):
+    """画面下部に石数と手番などのメッセージを表示する。"""
+    screen.fill(dark_green, pygame.Rect(0, board_px, board_px, status_height))
+    b, w = board.count_discs(1), board.count_discs(-1)
+    score = font.render(f"Black {b} - {w} White", True, white)
+    screen.blit(score, (12, board_px + 12))
+    msg = font.render(message, True, white)
+    screen.blit(msg, (board_px - msg.get_width() - 12, board_px + 12))
+
+
+def quit_game():
+    pygame.quit()
+    sys.exit()
+
 
 def main():
-    print("4: main開始")
-    
-    # 修正ポイント：全体初期化ではなく、必要なものだけ個別に起動
-    try:
-        pygame.display.init() # 画面機能だけ起動
-        pygame.font.init()    # 文字機能だけ起動
-        print("5: pygame.display & font init OK")
-    except Exception as e:
-        print(f"初期化エラーが発生しました: {e}")
-        return
+    pygame.display.init()
+    pygame.font.init()
 
-    board = Board()
-    print("6: Board生成OK")
-    
-    screen = pygame.display.set_mode((screen_size, screen_size))
-    print("7: set_mode OK")
-    pygame.display.set_caption("最強オセロAI")
+    screen = pygame.display.set_mode(screen_size)
+    pygame.display.set_caption("Othello AI")
     clock = pygame.time.Clock()
-    
-    # フォントの読み込み（Noneでデフォルトを使用）
-    font = pygame.font.SysFont(None, 40)
+
+    font = pygame.font.SysFont(None, 36)
     title_font = pygame.font.SysFont(None, 60)
-    
+
     game_state = "menu"
+    board = Board()
     human_color = 0
     ai_color = 0
     ai_player = None
     current_color = 1
+    message = ""
+
+    button_black = pygame.Rect(200, 300, 240, 60)
+    button_white = pygame.Rect(200, 400, 240, 60)
 
     while True:
-        # ==========================================
-        # 🎮 シーン1：メニュー画面
-        # ==========================================
+        # ===== メニュー画面 =====
         if game_state == "menu":
             screen.fill(green)
             title_text = title_font.render("Othello AI", True, black)
-            screen.blit(title_text, (200, 150))
+            screen.blit(title_text, title_text.get_rect(center=(board_px // 2, 180)))
 
-            button_black = pygame.Rect(200, 300, 240, 60)
-            button_white = pygame.Rect(200, 400, 240, 60)
             pygame.draw.rect(screen, black, button_black)
             pygame.draw.rect(screen, white, button_white)
-
             text_black = font.render("Play BLACK (1st)", True, white)
             text_white = font.render("Play WHITE (2nd)", True, black)
-            screen.blit(text_black, (215, 315))
-            screen.blit(text_white, (215, 415))
+            screen.blit(text_black, text_black.get_rect(center=button_black.center))
+            screen.blit(text_white, text_white.get_rect(center=button_white.center))
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    quit_game()
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    pos = pygame.mouse.get_pos()
-                    if button_black.collidepoint(pos):
+                    if button_black.collidepoint(event.pos):
                         human_color = 1
-                        ai_color = -1
-                        ai_player = AlphaBetaAI(ai_color, 4) # 🌟AI生成
-                        game_state = "Playing"
-                    elif button_white.collidepoint(pos):
+                    elif button_white.collidepoint(event.pos):
                         human_color = -1
-                        ai_color = 1
-                        ai_player = AlphaBetaAI(ai_color, 4) # 🌟AI生成
-                        game_state = "Playing"
+                    else:
+                        continue
+                    ai_color = -human_color
+                    ai_player = create_ai("4", ai_color)
+                    board = Board()
+                    current_color = 1
+                    message = ""
+                    game_state = "playing"
 
-        # ==========================================
-        # 🎮 シーン2：対局画面
-        # ==========================================
-        elif game_state == "Playing":
+        # ===== 対局画面 =====
+        elif game_state == "playing":
             current_moves = board.listUp(current_color)
-            opponent_moves = board.listUp(current_color * -1)
 
-            if len(current_moves) == 0 and len(opponent_moves) == 0:
+            if not current_moves and not board.has_valid_move(-current_color):
                 game_state = "result"
-            
-            elif len(current_moves) == 0:
-                print(f"パス！")
+                continue
+
+            if not current_moves:
+                message = "PASS (Black)" if current_color == 1 else "PASS (White)"
                 current_color *= -1
-            
+                continue
+
+            if current_color == human_color:
+                if not message.startswith("PASS"):
+                    message = "Your turn"
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        quit_game()
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        x, y = event.pos
+                        if y >= board_px:
+                            continue  # ステータスバーのクリックは無視
+                        if board.put_disc(y // square_size, x // square_size, current_color):
+                            current_color *= -1
+                            message = ""
+                draw_board(screen, board, hints=current_moves)
             else:
-                # --- A. 人間のターン ---
-                if current_color == human_color:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            pygame.quit()
-                            sys.exit()
-                        if event.type == pygame.MOUSEBUTTONDOWN:
-                            x, y = pygame.mouse.get_pos()
-                            col = x // square_size
-                            row = y // square_size
-                            # 自分のターンかつ、石が置けた場合のみ交代
-                            if board.put_disc(row, col, current_color):
-                                current_color *= -1
+                # 「思考中」を表示してから AI に考えさせる
+                draw_board(screen, board)
+                draw_status(screen, font, board, "AI is thinking...")
+                pygame.display.update()
+                pygame.event.pump()
 
-                # --- B. AIのターン ---
-                elif current_color == ai_color:
-                    # 1. まず盤面を最新状態にして「思考中」を出す
-                    draw_board(screen, board)
-                    thinking_text = font.render("AI is thinking...", True, white, black)
-                    screen.blit(thinking_text, (10, 10))
-                    pygame.display.update()
+                best_move = ai_player.get_move(board)
+                if best_move is not None:
+                    board.put_disc(best_move[0], best_move[1], ai_color)
+                current_color *= -1
+                pygame.event.clear()  # 思考中のクリックを捨てる
+                draw_board(screen, board)
 
-                    # 2. Windowsに「フリーズしてないよ」と伝える（重要）
-                    pygame.event.pump() 
+            draw_status(screen, font, board, message)
 
-                    # 3. AIの思考（ここが長い場合に備える）
-                    best_move = ai_player.get_move(board)
-                    
-                    if best_move is not None:
-                        row, col = best_move
-                        board.put_disc(row, col, ai_color)
-                    
-                    current_color *= -1
-                    
-                    # AIが置いた後、一度イベントを空にする（連打防止）
-                    pygame.event.clear()
-
-            # 描画
-            draw_board(screen, board)
-
-        # ==========================================
-        # 🎮 シーン3：結果発表（リザルト画面）
-        # ==========================================
+        # ===== 結果画面 =====
         elif game_state == "result":
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+                    quit_game()
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    game_state = "menu"
 
-            # 盤面を描画した上に、半透明の黒い幕をかぶせる
             draw_board(screen, board)
-            overlay = pygame.Surface((screen_size, screen_size))
+            draw_status(screen, font, board, "Click to restart")
+            overlay = pygame.Surface((board_px, board_px))
             overlay.set_alpha(150)
             overlay.fill(black)
             screen.blit(overlay, (0, 0))
 
-            # NumPyで石を数える
-            black_count = np.sum(board.grid == 1)
-            white_count = np.sum(board.grid == -1)
-
+            black_count = board.count_discs(1)
+            white_count = board.count_discs(-1)
             if black_count > white_count:
                 result_text = "BLACK WINS!"
             elif white_count > black_count:
@@ -184,15 +179,12 @@ def main():
 
             text_win = title_font.render(result_text, True, white)
             text_score = title_font.render(f"B:{black_count} - W:{white_count}", True, white)
+            screen.blit(text_win, text_win.get_rect(center=(board_px // 2, 270)))
+            screen.blit(text_score, text_score.get_rect(center=(board_px // 2, 340)))
 
-            screen.blit(text_win, (180, 250))
-            screen.blit(text_score, (190, 320))
-
-        # ==========================================
-        # 🔄 画面の更新（毎フレーム必ず呼ばれる）
-        # ==========================================
         pygame.display.update()
         clock.tick(fps)
+
 
 if __name__ == "__main__":
     main()
