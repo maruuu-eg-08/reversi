@@ -14,6 +14,7 @@ const PY_MODULES = [
   "weighted_ai.py",
   "minimax.py",
   "alphabeta_ai.py",
+  "strong_ai.py",
   "ai_manager.py",
   "web_api.py",
 ];

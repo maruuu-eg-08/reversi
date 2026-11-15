@@ -18,6 +18,7 @@ const COLS = "abcdefgh";
 const colorName = (c: Color) => (c === 1 ? "黒" : "白");
 const notation = (row: number, col: number) => `${COLS[col]}${row + 1}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const AI_TIME_LIMIT = 1.0; // Lv.5 が1手に使う時間（秒）
 
 // ---------- 状態 ----------
 let state: GameState | null = null;
@@ -173,6 +174,7 @@ async function startGame() {
   analysis = null;
   $("stat-ms").textContent = "–";
   $("stat-nodes").textContent = "–";
+  $("stat-depth").textContent = "–";
   const s = await engine.newGame();
   if (id !== gameId) return;
   state = s;
@@ -203,10 +205,15 @@ async function advance(id: number) {
       render();
       const level = levelSel.value;
       const depth = Number(depthInput.value);
-      const [res] = await Promise.all([engine.aiMove(s, level, depth), sleep(400)]);
+      const [res] = await Promise.all([engine.aiMove(s, level, depth, AI_TIME_LIMIT), sleep(400)]);
       if (id !== gameId) return;
       $("stat-ms").textContent = `${res.ms.toLocaleString()} ms`;
       $("stat-nodes").textContent = res.nodes === null ? "–（探索なし）" : res.nodes.toLocaleString();
+      $("stat-depth").textContent = res.solved
+        ? `終局まで読み切り（${res.depth} 手先）`
+        : res.depth
+          ? `${res.depth} 手先まで`
+          : "–";
       if (!res.move) throw new Error("AI が手を返しませんでした");
       const next = await engine.play(s, res.move[0], res.move[1]);
       if (id !== gameId) return;

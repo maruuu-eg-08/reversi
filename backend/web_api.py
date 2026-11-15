@@ -50,9 +50,9 @@ def play(black, white, color, row, col):
     return json.dumps(_state(b, -color, flipped))
 
 
-def ai_move(black, white, color, level, depth):
+def ai_move(black, white, color, level, depth, time_limit=1.0):
     b = _board(black, white)
-    ai = create_ai(str(level), color, depth=depth)
+    ai = create_ai(str(level), color, depth=depth, time_limit=time_limit)
     start = time.perf_counter()
     move = ai.get_move(b)
     elapsed = time.perf_counter() - start
@@ -60,6 +60,9 @@ def ai_move(black, white, color, level, depth):
         "move": list(move) if move else None,
         "ms": round(elapsed * 1000),
         "nodes": getattr(ai, "nodes", None),
+        # Lv.4 は固定の深さ、Lv.5 は時間内に読み終えた深さ
+        "depth": getattr(ai, "last_depth", getattr(ai, "depth", None)),
+        "solved": getattr(ai, "solved", False),
     })
 
 

@@ -65,3 +65,11 @@ def test_analyze_reports_forced_win():
     res = json.loads(analyze(str(b.black), str(b.white), -1, 2))
     assert res["moves"][0]["outcome"] == "win"
     assert res["moves"][0]["discDiff"] == 3
+
+
+def test_ai_move_level5_reports_depth():
+    s = json.loads(new_game())
+    r = json.loads(ai_move(s["black"], s["white"], 1, "5", 4, 0.2))
+    assert r["move"] in s["legal"]
+    assert r["depth"] >= 2
+    assert r["solved"] is False

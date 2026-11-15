@@ -19,8 +19,9 @@ Python のエンジンを [Pyodide](https://pyodide.org/) でブラウザ内実�
   | 2 | WeightedAI | マスごとの重み表で1手読み |
   | 3 | MinimaxAI | ミニマックス探索（深さ4） |
   | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け。終局局面は実際の勝敗で評価 |
-- **遺伝的アルゴリズムによる評価関数の学習**（`ga_trainer.py`）
-- **AI同士の対戦ベンチマーク**（`ai_benchmark.py`）
+  | 5 | StrongAI | 時間制限つき反復深化＋PVS、終盤は完全読み。評価関数は自己対戦データから線形回帰で学習（下記） |
+- **評価関数の学習**：自己対戦の棋譜から最小二乗法で係数を推定（`tune_eval.py`）。以前は遺伝的アルゴリズム（`ga_trainer.py`）
+- **AI同士の対戦ベンチマーク**：先後入れ替え・並列実行・勝率の95%信頼区間つき（`arena.py`）
 - **Web版**：Python エンジンを Web Worker 上の Pyodide で実行し、TypeScript の UI から呼び出す。AI の読み筋（全合法手の評価値）を可視化
 - **pygame GUI** と **ターミナル版**
 
@@ -31,7 +32,8 @@ pip install -r requirements.txt
 cd backend
 python gui.py        # GUIで対戦
 python main.py       # ターミナルで対戦
-python ai_benchmark.py 4 2 -n 100   # Level 4 と Level 2 を先後入れ替えで100戦
+python arena.py lv5:0.3 lv4 -n 50   # Lv.5（1手0.3秒）と Lv.4 を 50 序盤×先後で100戦
+python tune_eval.py --games 4000      # 自己対戦から評価関数を学習
 ```
 
 ### Web版をローカルで動かす
@@ -63,8 +65,11 @@ backend/
   bitboard.py      盤面（ビットボード）
   weights.py       評価パラメータ（重み表・GA学習済み係数）
   *_ai.py          各レベルのAI
-  ga_trainer.py    遺伝的アルゴリズムによる係数学習
-  ai_benchmark.py  AI同士の対戦ベンチマーク
+  strong_ai.py     Lv.5（反復深化・PVS・完全読み）
+  tune_eval.py     自己対戦データから評価関数を学習
+  arena.py         AI同士の並列対戦・勝率の信頼区間
+  ga_trainer.py    遺伝的アルゴリズムによる係数学習（旧）
+  ai_benchmark.py  AI同士の対戦ベンチマーク（旧）
   web_api.py       Web版から呼ぶ JSON API
   gui.py / main.py GUI版 / ターミナル版
 tests/             pytest
@@ -84,5 +89,5 @@ frontend/
 
 ## 今後の予定
 
-- 反復深化・終盤完全読みによるAI強化
-- Web版で深い読みを速くする（反復深化・時間制限）
+- 定石（序盤の手）を事前計算した opening book
+- より表現力の高い評価関数（辺・隅のパターン）の学習
