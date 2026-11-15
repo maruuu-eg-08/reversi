@@ -96,7 +96,39 @@ impl Searcher {
         if moves & (moves - 1) == 0 {
             return result(moves, 0.0, 0, 0, false); // 打てる手が1つだけ
         }
+        self.deepen(p, o, moves, start, time_limit, max_depth)
+    }
 
+    /// 終局まで読み切り、(最善手, 手番側から見た正確な評価値) を返す。
+    /// `search` と違い、打てる手が1つだけの局面でも読んで正確な値を返す。打てる手がない局面には使えない。
+    pub fn solve(&mut self, p: u64, o: u64) -> (u64, f64) {
+        let moves = legal_moves(p, o);
+        assert_ne!(moves, 0, "solve は打てる手がある局面で呼ぶ");
+        self.tt.clear();
+        self.nodes = 0;
+        self.deadline = None;
+        let r = self.deepen(p, o, moves, Instant::now(), f64::INFINITY, 60);
+        debug_assert!(r.solved);
+        (r.best_move, r.score)
+    }
+
+    /// 反復深化の本体。
+    fn deepen(
+        &mut self,
+        p: u64,
+        o: u64,
+        moves: u64,
+        start: Instant,
+        time_limit: f64,
+        max_depth: u32,
+    ) -> SearchResult {
+        let result = |best_move, score, depth, nodes, solved| SearchResult {
+            best_move,
+            score,
+            depth,
+            nodes,
+            solved,
+        };
         let n_empty = (!(p | o)).count_ones();
         let (mut best_move, mut best_score, mut done_depth) = (0, 0.0, 0);
         let mut solved = false;

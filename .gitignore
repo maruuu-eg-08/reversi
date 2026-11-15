@@ -14,3 +14,6 @@ dist/
 
 # build_book.py の途中結果
 *.cache
+
+# 学習データ（gen_data.py で作る大きなファイル）
+/data/
