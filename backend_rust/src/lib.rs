@@ -6,6 +6,7 @@
 
 pub mod board;
 pub mod eval;
+pub mod pattern;
 pub mod search;
 
 #[cfg(feature = "python")]
@@ -76,11 +77,44 @@ mod python {
         }
     }
 
+    /// 各パターンのインスタンスの並びの番号（テスト用。Python 版の patterns.indices と同じ）。
+    #[pyfunction]
+    fn pattern_indices(p: u64, o: u64) -> Vec<u32> {
+        crate::pattern::indices(p, o)
+    }
+
+    /// パターン評価（重みファイルを読み込んで使う）。
+    #[pyclass]
+    struct PatternEval {
+        weights: crate::pattern::PatternWeights,
+    }
+
+    #[pymethods]
+    impl PatternEval {
+        #[new]
+        fn new(path: &str) -> PyResult<Self> {
+            let weights = crate::pattern::PatternWeights::load(path)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            Ok(Self { weights })
+        }
+
+        /// 手番側 p から見た評価値（石数の単位）。
+        fn evaluate(&self, p: u64, o: u64) -> f64 {
+            let (mp, mo) = (
+                crate::board::legal_moves(p, o),
+                crate::board::legal_moves(o, p),
+            );
+            self.weights.evaluate(p, o, mp, mo)
+        }
+    }
+
     #[pymodule]
     fn reversi_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(legal_moves, m)?)?;
         m.add_function(wrap_pyfunction!(flips, m)?)?;
         m.add_class::<Searcher>()?;
+        m.add_function(wrap_pyfunction!(pattern_indices, m)?)?;
+        m.add_class::<PatternEval>()?;
         Ok(())
     }
 }
