@@ -20,6 +20,11 @@ export interface AiMoveResult {
   nodes: number | null;
   depth: number | null; // 読んだ深さ（Lv.5 は時間内に到達した深さ）
   solved: boolean; // 終局まで読み切ったか
+  book: boolean; // 定石（事前に深く読んだ手の表）から選んだ手か
+}
+
+export interface OpeningName {
+  name: string | null; // 例: "虎（Tiger）"。どの定石にも当てはまらなければ null
 }
 
 export interface MoveScore {
@@ -37,7 +42,7 @@ export interface Analysis {
   depth: number;
 }
 
-export type ApiFunction = "new_game" | "get_state" | "play" | "ai_move" | "analyze";
+export type ApiFunction = "new_game" | "get_state" | "play" | "ai_move" | "analyze" | "opening";
 
 export interface WorkerRequest {
   id: number;

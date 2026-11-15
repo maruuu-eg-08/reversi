@@ -6,6 +6,7 @@
 例:
     python arena.py lv5:0.3 lv4 -n 100
     python arena.py lv5:0.3 lv5:0.3:coeffs=tuned.txt -n 200
+    python arena.py lv5:0.3 lv5:0.3:book=off -n 200        # 定石あり vs なし
 """
 
 import argparse
@@ -18,7 +19,10 @@ from bitboard import BitBoard
 
 
 def make_player(spec, color):
-    """'lv4', 'lv4:6'（深さ）, 'lv5:0.5'（秒）, 'lv5:0.5:coeffs=path' のような文字列から AI を作る。"""
+    """'lv4', 'lv4:6'（深さ）, 'lv5:0.5'（秒）, 'lv5:0.5:coeffs=path' のような文字列から AI を作る。
+
+    Lv.5 は既定で同梱の定石を使う。'book=off' で使わない、'book=path' で別の定石ファイルを使う。
+    """
     parts = spec.split(":")
     level = parts[0].removeprefix("lv")
     opts = {}
@@ -30,6 +34,7 @@ def make_player(spec, color):
         else:
             positional.append(p)
     if level == "5":
+        from opening_book import OpeningBook, default_book
         from strong_ai import StrongAI
 
         coeffs = None
@@ -38,7 +43,14 @@ def make_player(spec, color):
                 coeffs = [float(v) for v in f.read().split()]
         t = float(positional[0]) if positional else 1.0
         d = int(opts.get("depth", 60))
-        return StrongAI(color, time_limit=t, max_depth=d, eval_coeffs=coeffs)
+        book_opt = opts.get("book", "default")
+        if book_opt == "off":
+            book = None
+        elif book_opt == "default":
+            book = default_book()
+        else:
+            book = OpeningBook.load(book_opt)
+        return StrongAI(color, time_limit=t, max_depth=d, eval_coeffs=coeffs, book=book)
     depth = int(positional[0]) if positional else 4
     return create_ai(level, color, depth=depth)
 

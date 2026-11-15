@@ -21,22 +21,27 @@ const PY_MODULES = [
   "minimax.py",
   "alphabeta_ai.py",
   "strong_ai.py",
+  "opening_book.py",
+  "openings.py",
   "ai_manager.py",
   "web_api.py",
 ];
+// Python から読み込むデータファイル（定石の表）
+const PY_DATA = ["opening_book.txt"];
+const PY_FILES = [...PY_MODULES, ...PY_DATA];
 
 mkdirSync(join(dist, "py"), { recursive: true });
 for (const f of ["index.html", "style.css"]) copyFileSync(join(root, f), join(dist, f));
-for (const f of PY_MODULES) copyFileSync(join(backend, f), join(dist, "py", f));
-// Worker はこの一覧を見て Python モジュールを読み込む
-writeFileSync(join(dist, "py", "manifest.json"), JSON.stringify(PY_MODULES));
-console.log(`copied ${PY_MODULES.length} Python modules to dist/py`);
+for (const f of PY_FILES) copyFileSync(join(backend, f), join(dist, "py", f));
+// Worker はこの一覧を見て Python のファイルを読み込む
+writeFileSync(join(dist, "py", "manifest.json"), JSON.stringify(PY_FILES));
+console.log(`copied ${PY_MODULES.length} Python modules and ${PY_DATA.length} data files to dist/py`);
 
 // ---------- バージョン付け ----------
 const jsFiles = readdirSync(dist).filter((f) => f.endsWith(".js")).sort();
 const hash = createHash("sha256");
 for (const f of [...jsFiles, "index.html", "style.css"]) hash.update(readFileSync(join(dist, f)));
-for (const f of PY_MODULES) hash.update(readFileSync(join(dist, "py", f)));
+for (const f of PY_FILES) hash.update(readFileSync(join(dist, "py", f)));
 const v = `?v=${hash.digest("hex").slice(0, 10)}`;
 
 function stamp(file, pattern, replacer, expected) {

@@ -723,3 +723,13 @@ button.primary:disabled {
     animation: none;
   }
 }
+
+.opening {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.opening strong {
+  color: var(--text);
+}

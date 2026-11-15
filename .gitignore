@@ -11,3 +11,6 @@ dist/
 *.png
 !docs/**/*.png
 .claude/
+
+# build_book.py の途中結果
+*.cache

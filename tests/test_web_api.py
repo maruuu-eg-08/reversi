@@ -73,3 +73,19 @@ def test_ai_move_level5_reports_depth():
     assert r["move"] in s["legal"]
     assert r["depth"] >= 2
     assert r["solved"] is False
+
+
+def test_opening_names():
+    from web_api import opening
+
+    assert json.loads(opening("f5d6c3d3c4"))["name"] == "虎（Tiger）"
+    assert json.loads(opening("f5d6"))["name"] == "縦取り（Perpendicular Opening）"
+    assert json.loads(opening(""))["name"] is None
+    assert json.loads(opening("a1"))["name"] is None  # 不正な初手
+    assert json.loads(opening("zz"))["name"] is None  # 不正な表記
+
+
+def test_ai_move_reports_book_flag():
+    s = json.loads(new_game())
+    r = json.loads(ai_move(s["black"], s["white"], 1, "4", 2))
+    assert r["book"] is False  # Lv.4 は定石を使わない

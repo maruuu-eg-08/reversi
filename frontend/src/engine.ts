@@ -5,6 +5,7 @@ import type {
   ApiFunction,
   Color,
   GameState,
+  OpeningName,
   WorkerMessage,
 } from "./protocol.js";
 
@@ -69,5 +70,9 @@ export class Engine {
   }
   analyze(s: GameState, depth: number) {
     return this.call<Analysis>("analyze", s.black, s.white, s.color, depth);
+  }
+  /** 棋譜（"f5d6c3..."、パスは含めない）に一致する定石名 */
+  opening(transcript: string) {
+    return this.call<OpeningName>("opening", transcript);
   }
 }
