@@ -61,8 +61,8 @@ export class Engine {
   play(s: GameState, row: number, col: number) {
     return this.call<GameState>("play", s.black, s.white, s.color, row, col);
   }
-  aiMove(s: GameState, level: string, depth: number) {
-    return this.call<AiMoveResult>("ai_move", s.black, s.white, s.color, level, depth);
+  aiMove(s: GameState, level: string, depth: number, timeLimit: number) {
+    return this.call<AiMoveResult>("ai_move", s.black, s.white, s.color, level, depth, timeLimit);
   }
   analyze(s: GameState, depth: number) {
     return this.call<Analysis>("analyze", s.black, s.white, s.color, depth);

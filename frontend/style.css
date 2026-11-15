@@ -517,6 +517,14 @@ button.primary:disabled {
   color: var(--muted);
 }
 
+.stats .wide {
+  grid-column: 1 / -1;
+}
+
+.label .sub {
+  font-size: 0.75rem;
+}
+
 .stats dd {
   margin: 0;
   font-weight: 700;

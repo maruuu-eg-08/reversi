@@ -68,11 +68,12 @@
               <option value="1">Lv.1 ランダム</option>
               <option value="2">Lv.2 重み表で1手読み</option>
               <option value="3">Lv.3 ミニマックス</option>
-              <option value="4" selected>Lv.4 αβ探索</option>
+              <option value="4">Lv.4 αβ探索（固定の深さ）</option>
+              <option value="5" selected>Lv.5 最強（約1秒・終盤は完全読み）</option>
             </select>
           </div>
           <div class="field" id="depth-field">
-            <label class="label" for="depth">読みの深さ <output id="depth-value">4</output> 手</label>
+            <label class="label" for="depth">読みの深さ <output id="depth-value">4</output> 手 <span class="sub">（Lv.4 と読み筋表示）</span></label>
             <input id="depth" type="range" min="2" max="6" step="1" value="4" />
           </div>
           <button id="new-game" class="primary" type="button" disabled>新しい対局</button>
@@ -93,6 +94,7 @@
           <dl class="stats">
             <div><dt>直前の AI 思考時間</dt><dd id="stat-ms">–</dd></div>
             <div><dt>探索局面数</dt><dd id="stat-nodes">–</dd></div>
+            <div class="wide"><dt>直前の AI の読み</dt><dd id="stat-depth">–</dd></div>
           </dl>
         </div>
 

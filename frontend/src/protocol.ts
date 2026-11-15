@@ -18,6 +18,8 @@ export interface AiMoveResult {
   move: Move | null;
   ms: number;
   nodes: number | null;
+  depth: number | null; // 読んだ深さ（Lv.5 は時間内に到達した深さ）
+  solved: boolean; // 終局まで読み切ったか
 }
 
 export interface MoveScore {
