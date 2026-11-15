@@ -130,3 +130,33 @@ def test_engine_selection():
         StrongAI(1, engine="c++")
     with pytest.raises(ValueError):
         reversi_engine.Searcher([0.0] * 11, [0.0] * 64)
+
+
+# ---------- パターン評価 ----------
+def test_pattern_indices_match():
+    from patterns import indices
+
+    rng = random.Random(20)
+    for _ in range(200):
+        P, O = random_position(rng, rng.randint(0, 58))
+        assert reversi_engine.pattern_indices(P, O) == indices(P, O)
+
+
+def test_pattern_evaluation_matches(tmp_path):
+    from test_patterns import random_weights
+
+    rng = random.Random(21)
+    w = random_weights(rng)
+    path = tmp_path / "w.bin"
+    w.save(path)
+    rust = reversi_engine.PatternEval(str(path))
+    for _ in range(200):
+        P, O = random_position(rng, rng.randint(0, 58))
+        assert rust.evaluate(P, O) == w.evaluate(P, O, legal_moves(P, O), legal_moves(O, P))
+
+
+def test_pattern_eval_rejects_bad_file(tmp_path):
+    path = tmp_path / "bad.bin"
+    path.write_bytes(b"not a weights file")
+    with pytest.raises(ValueError):
+        reversi_engine.PatternEval(str(path))
