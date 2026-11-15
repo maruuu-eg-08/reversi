@@ -8,8 +8,11 @@ pub mod board;
 pub mod eval;
 pub mod pattern;
 pub mod search;
+pub mod selfplay;
 
 #[cfg(feature = "python")]
+// PyO3 0.22 のマクロが展開するコードに clippy::useless_conversion が誤って反応するため
+#[allow(clippy::useless_conversion)]
 mod python {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
@@ -108,6 +111,43 @@ mod python {
         }
     }
 
+    /// 自己対戦で学習データを作る。ゲーム番号 first〜first+count-1 の全局面を、
+    /// 1局面 RECORD_SIZE バイトのレコードを並べた bytes で返す（ゲーム番号の順）。探索中は GIL を手放す。
+    #[pyfunction]
+    #[allow(clippy::too_many_arguments)]
+    fn generate_games<'py>(
+        py: Python<'py>,
+        first: u32,
+        count: u32,
+        seed: u64,
+        depth: u32,
+        random_min: u32,
+        random_max: u32,
+        solve_empties: u32,
+        coeffs: Vec<f64>,
+        weights: Vec<f64>,
+        threads: usize,
+    ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+        if random_min > random_max {
+            return Err(PyValueError::new_err(
+                "random_min は random_max 以下にしてください",
+            ));
+        }
+        let eval = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
+        let cfg = crate::selfplay::Config {
+            depth,
+            random_min,
+            random_max,
+            solve_empties,
+            seed,
+        };
+        let records = py.allow_threads(|| {
+            crate::selfplay::play_games(first, count, &cfg, &eval, threads, &|_| {})
+        });
+        let bytes: Vec<u8> = records.iter().flat_map(|r| r.to_bytes()).collect();
+        Ok(pyo3::types::PyBytes::new_bound(py, &bytes))
+    }
+
     #[pymodule]
     fn reversi_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(legal_moves, m)?)?;
@@ -115,6 +155,8 @@ mod python {
         m.add_class::<Searcher>()?;
         m.add_function(wrap_pyfunction!(pattern_indices, m)?)?;
         m.add_class::<PatternEval>()?;
+        m.add_function(wrap_pyfunction!(generate_games, m)?)?;
+        m.add("RECORD_SIZE", crate::selfplay::RECORD_SIZE)?;
         Ok(())
     }
 }
