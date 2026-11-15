@@ -4,6 +4,11 @@
 
 ビットボードで実装したリバーシ（オセロ）エンジンと、強さの異なる複数のAIです。
 
+**▶ ブラウザで遊ぶ: https://maruuu-eg-08.github.io/reversi/**
+
+Python のエンジンを [Pyodide](https://pyodide.org/) でブラウザ内実行しているので、サーバーなしで動きます。
+あなたの番では、打てる各マスを AI が読んだ評価値をヒートマップで表示します。
+
 ## 特徴
 
 - **ビットボード盤面**：盤面を64ビット整数2つで表現し、シフト演算で合法手生成・石の反転を行う（perft テストと、素朴な実装との比較テストで正しさを確認）
@@ -16,6 +21,7 @@
   | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け。終局局面は実際の勝敗で評価 |
 - **遺伝的アルゴリズムによる評価関数の学習**（`ga_trainer.py`）
 - **AI同士の対戦ベンチマーク**（`ai_benchmark.py`）
+- **Web版**：Python エンジンを Web Worker 上の Pyodide で実行し、TypeScript の UI から呼び出す。AI の読み筋（全合法手の評価値）を可視化
 - **pygame GUI** と **ターミナル版**
 
 ## 使い方
@@ -26,6 +32,14 @@ cd backend
 python gui.py        # GUIで対戦
 python main.py       # ターミナルで対戦
 python ai_benchmark.py 4 2 -n 100   # Level 4 と Level 2 を先後入れ替えで100戦
+```
+
+### Web版をローカルで動かす
+
+```bash
+cd frontend
+npm install
+npm run serve   # http://localhost:8000
 ```
 
 ### テスト・lint
@@ -51,12 +65,24 @@ backend/
   *_ai.py          各レベルのAI
   ga_trainer.py    遺伝的アルゴリズムによる係数学習
   ai_benchmark.py  AI同士の対戦ベンチマーク
+  web_api.py       Web版から呼ぶ JSON API
   gui.py / main.py GUI版 / ターミナル版
 tests/             pytest
-frontend/          Web版（作成中）
+frontend/
+  src/app.ts       盤面UI・対局の進行
+  src/worker.ts    Pyodide を読み込み Python エンジンを実行する Web Worker
+  src/engine.ts    Worker との通信
+```
+
+## Web版の仕組み
+
+```
+ブラウザ（メインスレッド）            Web Worker
+  app.ts  ── postMessage ──▶  worker.ts ── Pyodide(CPython) ──▶ backend/*.py
+   盤面UI   ◀── JSON 結果 ───            web_api.py → alphabeta_ai.py など
 ```
 
 ## 今後の予定
 
 - 反復深化・終盤完全読みによるAI強化
-- ブラウザで遊べるWeb版
+- Web版で深い読みを速くする（反復深化・時間制限）

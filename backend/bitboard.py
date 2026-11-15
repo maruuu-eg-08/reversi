@@ -1,5 +1,3 @@
-import numpy as np
-
 MASK_LEFT_RIGHT = 0x7e7e7e7e7e7e7e7e
 
 MASK_TOP_BOTTOM = 0x00ffffffffffff00
@@ -168,6 +166,8 @@ class BitBoard:
         """
         GUIの描画用に、64ビットの整数を 8x8 のNumPy配列に変換して返す翻訳機
         """
+        import numpy as np  # 描画用途のみ。エンジン本体（Web版も含む）は numpy に依存しない
+
         grid_array = np.zeros((8, 8), dtype=int)
 
         for row in range(8):
