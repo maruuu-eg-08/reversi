@@ -325,7 +325,11 @@ async function advance(id: number) {
       const [res] = await Promise.all([engine.aiMove(s, level, depth, AI_TIME_LIMIT), sleep(400)]);
       if (id !== gameId) return;
       $("stat-ms").textContent = `${res.ms.toLocaleString()} ms`;
-      $("stat-nodes").textContent = res.nodes === null ? "–（探索なし）" : res.nodes.toLocaleString();
+      $("stat-nodes").textContent = res.book
+        ? "–（定石）"
+        : res.nodes === null
+          ? "–（探索なし）"
+          : res.nodes.toLocaleString();
       $("stat-depth").textContent = res.book
         ? `定石の手（事前に ${res.depth} 手先まで解析済み）`
         : res.solved
