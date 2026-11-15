@@ -3,12 +3,14 @@
 //! 時間制限なし（固定の深さ）で読んだ場合、Python 版と同じ最善手・評価値・探索局面数になる
 //! （tests/test_rust_engine.py で確認）。違いは速さだけなので、同じ時間ならより深く読める。
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
 
 use crate::board::{bits, legal_moves, play};
 use crate::eval::{final_score, Evaluator};
+use crate::pattern::PatternWeights;
 
 /// PVS のヌルウィンドウの幅（Python 版と同じ値）
 const NULL_WINDOW: f64 = 1e-6;
@@ -52,7 +54,10 @@ pub struct SearchResult {
 }
 
 pub struct Searcher {
+    /// 線形評価（パターン評価を使う場合も、手の並べ替えにはこの位置の重みを使う）
     eval: Evaluator,
+    /// パターン評価の重み。あれば葉の評価にこちらを使う
+    pattern: Option<Arc<PatternWeights>>,
     tt: FxHashMap<(u64, u64), Entry>,
     nodes: u64,
     deadline: Option<Instant>,
@@ -64,6 +69,7 @@ impl Searcher {
     pub fn new(eval: Evaluator) -> Self {
         Self {
             eval,
+            pattern: None,
             tt: FxHashMap::default(),
             nodes: 0,
             deadline: None,
@@ -71,8 +77,19 @@ impl Searcher {
         }
     }
 
-    pub fn evaluator(&self) -> &Evaluator {
-        &self.eval
+    /// 葉の評価にパターン評価を使うようにする。
+    pub fn with_patterns(mut self, weights: Arc<PatternWeights>) -> Self {
+        self.pattern = Some(weights);
+        self
+    }
+
+    /// 手番側 `p` から見た静的評価値（深さ0）。`my_moves` は `legal_moves(p, o)`。
+    #[inline]
+    pub fn evaluate(&self, p: u64, o: u64, my_moves: u64) -> f64 {
+        match &self.pattern {
+            Some(w) => w.evaluate(p, o, my_moves, legal_moves(o, p)),
+            None => self.eval.evaluate(p, o, my_moves),
+        }
     }
 
     /// 反復深化で読む。`time_limit` 秒（無限大なら制限なし）か深さ `max_depth` まで。
@@ -240,7 +257,7 @@ impl Searcher {
             return Ok(-self.negamax(o, p, depth, -beta, -alpha)?); // パス
         }
         if depth <= 0 {
-            return Ok(self.eval.evaluate(p, o, moves));
+            return Ok(self.evaluate(p, o, moves));
         }
 
         let key = (p, o);

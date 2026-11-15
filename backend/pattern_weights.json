@@ -1,0 +1,191 @@
+{
+  "settings": {
+    "data": "data/selfplay-200k.bin (gen_data.py --games 200000 --depth 6 --random-min 8 --random-max 20 --solve-empties 14 --seed 0)",
+    "lambda": 30.0,
+    "max_iter": 300,
+    "tol": 1e-06,
+    "valid_every": 10
+  },
+  "stages": [
+    {
+      "clamped": 0,
+      "linear_rmse": 31.079901159978558,
+      "n_valid": 80000,
+      "linear_r2": -0.0020748326684405516,
+      "stage": 0,
+      "valid_rmse": 31.03052013697665,
+      "n_train": 720000,
+      "iterations": 300,
+      "train_rmse": 31.14585468758522,
+      "valid_r2": 0.0011069129500227426
+    },
+    {
+      "stage": 1,
+      "iterations": 300,
+      "n_valid": 80000,
+      "valid_rmse": 30.76545340241275,
+      "train_rmse": 30.81057646638062,
+      "linear_r2": 8.974756207147383e-05,
+      "clamped": 0,
+      "linear_rmse": 31.046315190729416,
+      "n_train": 720000,
+      "valid_r2": 0.01809937479158341
+    },
+    {
+      "n_train": 719876,
+      "iterations": 300,
+      "clamped": 0,
+      "stage": 2,
+      "n_valid": 79988,
+      "valid_rmse": 29.94463551558706,
+      "linear_rmse": 30.98680301320026,
+      "valid_r2": 0.06934071293227928,
+      "linear_r2": 0.0034337029868042324,
+      "train_rmse": 29.80926936379468
+    },
+    {
+      "clamped": 0,
+      "n_valid": 79975,
+      "valid_rmse": 28.464617086205177,
+      "n_train": 719712,
+      "train_rmse": 28.04825004007102,
+      "valid_r2": 0.15861852013706745,
+      "iterations": 300,
+      "linear_rmse": 30.973288738044687,
+      "linear_r2": 0.003776232765225873,
+      "stage": 3
+    },
+    {
+      "valid_r2": 0.2805757806317474,
+      "linear_rmse": 30.81776550243883,
+      "clamped": 0,
+      "stage": 4,
+      "linear_r2": 0.013199897298228125,
+      "n_train": 719633,
+      "n_valid": 79961,
+      "train_rmse": 25.559407883763757,
+      "iterations": 300,
+      "valid_rmse": 26.313528004543436
+    },
+    {
+      "n_train": 719576,
+      "valid_r2": 0.41348457226370405,
+      "valid_rmse": 23.75606063159914,
+      "train_rmse": 22.958115403500656,
+      "linear_rmse": 30.24723679927482,
+      "linear_r2": 0.04917191120897502,
+      "clamped": 0,
+      "stage": 5,
+      "n_valid": 79955,
+      "iterations": 300
+    },
+    {
+      "valid_rmse": 21.279231082120504,
+      "linear_r2": 0.118811868856605,
+      "n_train": 719554,
+      "stage": 6,
+      "clamped": 0,
+      "linear_rmse": 29.116687132594638,
+      "valid_r2": 0.5293516062381876,
+      "n_valid": 79952,
+      "iterations": 300,
+      "train_rmse": 20.41947554840114
+    },
+    {
+      "valid_r2": 0.6343758542174776,
+      "n_train": 719521,
+      "train_rmse": 17.827409798863417,
+      "linear_r2": 0.22694725717604314,
+      "linear_rmse": 27.270284084599602,
+      "n_valid": 79950,
+      "clamped": 0,
+      "stage": 7,
+      "iterations": 300,
+      "valid_rmse": 18.75437233276986
+    },
+    {
+      "n_valid": 79943,
+      "valid_rmse": 16.03197344322044,
+      "stage": 8,
+      "iterations": 300,
+      "linear_r2": 0.3582207466478323,
+      "clamped": 0,
+      "train_rmse": 15.194782834119856,
+      "n_train": 719359,
+      "valid_r2": 0.732719840187682,
+      "linear_rmse": 24.842566466778045
+    },
+    {
+      "n_valid": 79908,
+      "clamped": 0,
+      "valid_rmse": 13.150935956920833,
+      "train_rmse": 12.469318472500786,
+      "stage": 9,
+      "linear_rmse": 21.921396074077702,
+      "n_train": 718698,
+      "iterations": 300,
+      "linear_r2": 0.49933801534301103,
+      "valid_r2": 0.8198138008441499
+    },
+    {
+      "valid_rmse": 10.330788448109175,
+      "clamped": 0,
+      "iterations": 300,
+      "linear_r2": 0.6316193840255769,
+      "stage": 10,
+      "n_valid": 79770,
+      "valid_r2": 0.8881014715736062,
+      "train_rmse": 9.740846312316217,
+      "linear_rmse": 18.744318949643603,
+      "n_train": 716907
+    },
+    {
+      "iterations": 287,
+      "stage": 11,
+      "n_train": 713371,
+      "linear_r2": 0.7410194522277571,
+      "train_rmse": 7.136604815299296,
+      "linear_rmse": 15.58466374565998,
+      "n_valid": 79402,
+      "clamped": 0,
+      "valid_rmse": 7.545805574204019,
+      "valid_r2": 0.9392867482090401
+    },
+    {
+      "stage": 12,
+      "n_train": 708461,
+      "linear_rmse": 13.117095819716823,
+      "valid_r2": 0.9574212447043113,
+      "linear_r2": 0.811594033474279,
+      "valid_rmse": 6.2357234427489345,
+      "n_valid": 78785,
+      "iterations": 300,
+      "clamped": 0,
+      "train_rmse": 5.8988365681872
+    },
+    {
+      "train_rmse": 5.3514776008859375,
+      "n_train": 701260,
+      "stage": 13,
+      "n_valid": 77937,
+      "iterations": 300,
+      "valid_r2": 0.9633907553133827,
+      "valid_rmse": 5.668661686166879,
+      "linear_r2": 0.8601528500570967,
+      "clamped": 0,
+      "linear_rmse": 11.079290865158063
+    },
+    {
+      "train_rmse": 3.7341079175933456,
+      "n_valid": 75388,
+      "linear_rmse": 8.184146005612837,
+      "valid_r2": 0.9802498560693764,
+      "linear_r2": 0.9138482153500598,
+      "clamped": 0,
+      "stage": 14,
+      "iterations": 300,
+      "n_train": 678132,
+      "valid_rmse": 3.918558745183565
+    }
+  ]
+}

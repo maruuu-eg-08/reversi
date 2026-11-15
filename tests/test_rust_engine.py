@@ -160,3 +160,39 @@ def test_pattern_eval_rejects_bad_file(tmp_path):
     path.write_bytes(b"not a weights file")
     with pytest.raises(ValueError):
         reversi_engine.PatternEval(str(path))
+
+
+@pytest.fixture(scope="module")
+def pattern_file(tmp_path_factory):
+    from test_patterns import random_weights
+
+    path = tmp_path_factory.mktemp("pat") / "w.bin"
+    random_weights(random.Random(30)).save(path)
+    return str(path)
+
+
+@pytest.mark.parametrize("depth", [1, 2, 3])
+def test_search_with_patterns_matches(pattern_file, depth):
+    rng = random.Random(40 + depth)
+    for _ in range(12):
+        P, O = random_position(rng, rng.randint(4, 44))
+        py, rs = pair(time_limit=INF, max_depth=depth, patterns=pattern_file)
+        assert rs.search(P, O) == py.search(P, O)
+        assert rs.nodes == py.nodes
+
+
+def test_patterns_change_the_evaluation(pattern_file):
+    P, O = random_position(random.Random(50), 20)
+    linear = StrongAI(1, engine="rust")
+    pat = StrongAI(1, engine="rust", patterns=pattern_file)
+    assert pat._native.evaluate(P, O) == pat.evaluate(P, O)
+    assert pat.evaluate(P, O) != linear.evaluate(P, O)
+
+
+def test_level5_uses_bundled_patterns_with_rust():
+    from ai_manager import create_ai
+    from strong_ai import DEFAULT_PATTERNS
+
+    ai = create_ai("5", 1)
+    assert ai.engine == "rust" and ai.patterns_path == DEFAULT_PATTERNS
+    assert StrongAI(1, engine="python", patterns="auto").patterns_path is None  # Python 版では使わない

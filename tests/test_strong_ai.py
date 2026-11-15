@@ -165,3 +165,13 @@ def test_score_moves_best_matches_search():
 def test_create_ai_level5_uses_book_by_default():
     assert create_ai("5", 1).book is not None
     assert create_ai("5", 1, use_book=False).book is None
+
+
+def test_auto_patterns_follow_the_engine():
+    from strong_ai import _native
+
+    ai = create_ai("5", 1)
+    if _native is None:  # ブラウザ版と同じ環境: 線形評価のまま
+        assert ai.patterns_path is None
+    else:
+        assert ai.patterns_path is not None

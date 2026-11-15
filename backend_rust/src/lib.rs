@@ -40,12 +40,16 @@ mod python {
 
     #[pymethods]
     impl Searcher {
+        /// pattern_path を渡すと、葉の評価にそのファイルのパターン評価を使う（同じファイルは1回だけ読み込む）。
         #[new]
-        fn new(coeffs: Vec<f64>, weights: Vec<f64>) -> PyResult<Self> {
+        #[pyo3(signature = (coeffs, weights, pattern_path=None))]
+        fn new(coeffs: Vec<f64>, weights: Vec<f64>, pattern_path: Option<&str>) -> PyResult<Self> {
             let eval = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
-            Ok(Self {
-                inner: crate::search::Searcher::new(eval),
-            })
+            let mut inner = crate::search::Searcher::new(eval);
+            if let Some(path) = pattern_path {
+                inner = inner.with_patterns(load_patterns(path)?);
+            }
+            Ok(Self { inner })
         }
 
         /// 反復深化で読み、(最善手, 評価値, 読んだ深さ, 探索局面数, 終局まで読み切ったか) を返す。
@@ -75,10 +79,26 @@ mod python {
 
         /// 手番側 p から見た評価値（深さ0）。
         fn evaluate(&self, p: u64, o: u64) -> f64 {
-            self.inner
-                .evaluator()
-                .evaluate(p, o, crate::board::legal_moves(p, o))
+            self.inner.evaluate(p, o, crate::board::legal_moves(p, o))
         }
+    }
+
+    /// パターン評価の重みファイルを読み込む。同じパスは2回目以降は読み込み済みのものを使う。
+    fn load_patterns(path: &str) -> PyResult<std::sync::Arc<crate::pattern::PatternWeights>> {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex, OnceLock};
+        static CACHE: OnceLock<Mutex<HashMap<String, Arc<crate::pattern::PatternWeights>>>> =
+            OnceLock::new();
+        let mut cache = CACHE.get_or_init(Default::default).lock().unwrap();
+        if let Some(w) = cache.get(path) {
+            return Ok(w.clone());
+        }
+        let w = Arc::new(
+            crate::pattern::PatternWeights::load(path)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        );
+        cache.insert(path.to_string(), w.clone());
+        Ok(w)
     }
 
     /// 各パターンのインスタンスの並びの番号（テスト用。Python 版の patterns.indices と同じ）。
