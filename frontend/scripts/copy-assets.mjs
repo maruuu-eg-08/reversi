@@ -1,5 +1,5 @@
-// ビルド成果物 dist/ に HTML・CSS と、ブラウザで動かす Python エンジンをコピーし、
-// 全ファイルの URL にバージョン（内容のハッシュ）を付ける。
+// ビルド成果物 dist/ に HTML・CSS と、ブラウザで動かす Rust 版エンジン（WebAssembly）と
+// そのデータ（パターン評価の重み・定石）をコピーし、全ファイルの URL にバージョン（内容のハッシュ）を付ける。
 //
 // GitHub Pages は各ファイルを10分キャッシュするため、そのままだと公開直後に
 // 「新しい HTML + 古い JS」のような組み合わせで読み込まれて壊れることがある。
@@ -12,36 +12,25 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const backend = join(root, "..", "backend");
+const wasmDir = join(root, "..", "backend_rust", "target", "wasm32-unknown-unknown", "release");
 
-const PY_MODULES = [
-  "bitboard.py",
-  "weights.py",
-  "random_ai.py",
-  "weighted_ai.py",
-  "minimax.py",
-  "alphabeta_ai.py",
-  "strong_ai.py",
-  "opening_book.py",
-  "openings.py",
-  "ai_manager.py",
-  "web_api.py",
+// Worker（src/worker.ts）が dist/engine/ から読み込むファイル
+const ENGINE_FILES = [
+  [join(wasmDir, "reversi_engine.wasm"), "reversi_engine.wasm"],
+  [join(backend, "pattern_weights.bin"), "pattern_weights.bin"],
+  [join(backend, "opening_book.txt"), "opening_book.txt"],
 ];
-// Python から読み込むデータファイル（定石の表）
-const PY_DATA = ["opening_book.txt"];
-const PY_FILES = [...PY_MODULES, ...PY_DATA];
 
-mkdirSync(join(dist, "py"), { recursive: true });
+mkdirSync(join(dist, "engine"), { recursive: true });
 for (const f of ["index.html", "style.css"]) copyFileSync(join(root, f), join(dist, f));
-for (const f of PY_FILES) copyFileSync(join(backend, f), join(dist, "py", f));
-// Worker はこの一覧を見て Python のファイルを読み込む
-writeFileSync(join(dist, "py", "manifest.json"), JSON.stringify(PY_FILES));
-console.log(`copied ${PY_MODULES.length} Python modules and ${PY_DATA.length} data files to dist/py`);
+for (const [src, name] of ENGINE_FILES) copyFileSync(src, join(dist, "engine", name));
+console.log(`copied ${ENGINE_FILES.length} engine files to dist/engine`);
 
 // ---------- バージョン付け ----------
 const jsFiles = readdirSync(dist).filter((f) => f.endsWith(".js")).sort();
 const hash = createHash("sha256");
 for (const f of [...jsFiles, "index.html", "style.css"]) hash.update(readFileSync(join(dist, f)));
-for (const f of PY_FILES) hash.update(readFileSync(join(dist, "py", f)));
+for (const [, name] of ENGINE_FILES) hash.update(readFileSync(join(dist, "engine", name)));
 const v = `?v=${hash.digest("hex").slice(0, 10)}`;
 
 function stamp(file, pattern, replacer, expected) {

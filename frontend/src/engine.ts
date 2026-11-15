@@ -27,7 +27,7 @@ export class Engine {
             onProgress(msg.message);
             break;
           case "ready":
-            resolve(msg.pythonVersion);
+            resolve(msg.runtime);
             break;
           case "init-error":
             reject(new Error(msg.message));

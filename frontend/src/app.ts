@@ -494,7 +494,7 @@ document.addEventListener("keydown", (e) => {
 // ---------- 起動 ----------
 engine.ready
   .then(async (version) => {
-    $("runtime").textContent = `Python ${version}（Pyodide）`;
+    $("runtime").textContent = version;
     loadingEl.hidden = true;
     newGameBtn.disabled = false;
     await startGame();

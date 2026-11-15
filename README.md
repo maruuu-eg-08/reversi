@@ -6,7 +6,7 @@
 
 **▶ ブラウザで遊ぶ: https://maruuu-eg-08.github.io/reversi/**
 
-Python のエンジンを [Pyodide](https://pyodide.org/) でブラウザ内実行しているので、サーバーなしで動きます。
+Rust で書いた探索エンジン（パターン評価）を WebAssembly にしてブラウザ内で実行しているので、サーバーなしで動きます。
 あなたの番では、打てる各マスを AI が読んだ評価値をヒートマップで表示します（対局中にオン/オフ可能）。
 「一手戻す」で待ったができ、棋譜は「f5d6c3…」形式でコピーできます。
 序盤は Lv.5 が事前に解析した定石で即答し、打っている定石の名前（虎・牛・ローズなど）も表示します。
@@ -21,14 +21,14 @@ Python のエンジンを [Pyodide](https://pyodide.org/) でブラウザ内実�
   | 2 | WeightedAI | マスごとの重み表で1手読み |
   | 3 | MinimaxAI | ミニマックス探索（深さ4） |
   | 4 | AlphaBetaAI | αβ探索＋置換表、位置・着手可能数・石数を局面の進行度で重み付け。終局局面は実際の勝敗で評価 |
-  | 5 | StrongAI | 時間制限つき反復深化＋PVS、終盤は完全読み、序盤は定石。評価は**パターン評価**（Rust 版使用時。下記）、Web版は線形評価 |
+  | 5 | StrongAI | 時間制限つき反復深化＋PVS、終盤は完全読み、序盤は定石。評価は**パターン評価**（Rust 版使用時・Web版。下記） |
 - **Rust 版エンジン**：探索・評価・合法手生成を Rust に移植し、PyO3 で Python から呼び出す（`backend_rust/`）。Python 版と探索局面数まで完全に一致したまま約80倍高速
 - **パターン評価**：辺・隅・斜めなど11種類の形（回転・反転で84個）の石の並びごとの点数を、自己対戦20万局（約1,190万局面）から学習。今の線形評価に **97.0% 勝ち**（`patterns.py`, `pattern.rs`, `train.rs`）
 - **序盤の定石（opening book）**：序盤の 7,122 局面を 10 手先まで事前に解析した表。盤面の8通りの対称性で局面をまとめて保存（`build_book.py`, `opening_book.py`）。生成は GitHub Actions + PyPy で実行
 - **定石名の判定**：Robert Gatliff の定石リスト（77種）と照合し、どの向きから打っても「虎（Tiger）」などを判定（`openings.py`）
 - **評価関数の学習**：自己対戦の棋譜から最小二乗法で係数を推定（`tune_eval.py`）。以前は遺伝的アルゴリズム（`ga_trainer.py`）
 - **AI同士の対戦ベンチマーク**：先後入れ替え・並列実行・勝率の95%信頼区間つき（`arena.py`）
-- **Web版**：Python エンジンを Web Worker 上の Pyodide で実行し、TypeScript の UI から呼び出す。AI の読み筋（全合法手の評価値）を可視化。待った（一手戻す）・棋譜の表示とコピーにも対応
+- **Web版**：Rust のエンジンを WebAssembly（145KB）にして Web Worker で実行し、TypeScript の UI から呼び出す。Lv.1〜5 すべて Python 版と同じ手を選ぶことをテストで確認。AI の読み筋（全合法手の評価値）を可視化。待った（一手戻す）・棋譜の表示とコピーにも対応
 - **pygame GUI** と **ターミナル版**
 
 ## 使い方
@@ -58,10 +58,14 @@ cd backend_rust && cargo test --release
 
 ### Web版をローカルで動かす
 
+Rust（1.87 以上）と WebAssembly 用のターゲットが必要です。
+
 ```bash
+rustup target add wasm32-unknown-unknown
 cd frontend
 npm install
-npm run serve   # http://localhost:8000
+npm run serve   # Rust を WebAssembly にビルドして http://localhost:8000 で配信
+npm test        # ビルドしたエンジンを Node で動かして確認
 ```
 
 ### テスト・lint
@@ -76,6 +80,8 @@ ruff check .
 
 `arena.py` で、ランダムに数手進めた同じ序盤から先手・後手を入れ替えて対戦（CPython, 8並列）。
 定石より上の行の Lv.5 は、定石を導入する前に測定したものです（現在の Lv.5 は既定で定石を使い、`book=off` で無効化）。
+※ 新しい Web版（Rust＋パターン評価＋定石）と以前の Web版（Python・線形評価）を、手元の CPython / Rust で再現して対戦。
+ブラウザの WebAssembly は手元の Rust の約半分の速さ（約57万局面/秒、1秒で9〜10手読み）、以前の Pyodide は手元の CPython より遅いので、目安です。
 
 | 対戦 | 対局数 | 勝-敗-分 | 勝率（95%信頼区間） | 平均石差 |
 |---|---|---|---|---|
@@ -85,6 +91,7 @@ ruff check .
 | Lv.5 定石あり vs なし（ともに0.3秒） | 400 | 202-185-13 | 52.1%（47.2–57.0%）有意差なし | +1.5 |
 | Lv.5 Rust 版 vs Python 版（ともに0.3秒） | 200 | 193-7-0 | 96.5%（94.0–99.0%） | +40.2 |
 | Lv.5 パターン評価 vs 線形評価（ともに Rust・0.3秒） | 200 | 194-6-0 | **97.0%（94.6–99.4%）** | +32.6 |
+| 新しい Web版の Lv.5 vs 以前の Web版の Lv.5（1秒、目安※） | 50 | 49-0-1 | **99.0%（96.2–100%）** | +46.1 |
 
 ### 評価関数の学習（`tune_eval.py`）
 
@@ -122,7 +129,7 @@ Lv.5 の評価関数は「位置の重み・着手可能数・石数・開放度
 
 パターン評価は計算が重く、同じ0.3秒で読める深さは平均 9.8手 → 8.1手 と浅くなります（Rust 版で約116万局面/秒）。
 それでも線形評価に 194勝6敗 でした。**深く読むことより、局面を正しく評価できることの方が効いている**ことになります。
-Lv.5 は Rust 版エンジンがあれば自動でパターン評価を使います（Python だけの環境・Web版は線形評価のまま）。
+Lv.5 は Rust 版エンジンがあれば自動でパターン評価を使います（Web版も Rust を WebAssembly にして使う。Python だけの環境は線形評価）。
 
 ### 序盤の定石（`build_book.py`）
 
@@ -152,7 +159,7 @@ Lv.5 は Rust 版エンジンがあれば自動でパターン評価を使いま
 
 `strong_ai.py` の計算の重い部分（合法手生成・評価関数・反復深化 PVS 探索・置換表）だけを Rust に移植しました。
 学習・定石の生成・対戦などのツールは Python のまま、`StrongAI` が自動的に Rust 版を呼び出します。
-ブラウザ版（Pyodide）は Rust 版なしで Python 版のまま動きます。
+Web版もこのエンジンを WebAssembly にして使います（下の「Web版の仕組み」）。
 
 **Python 版と同じ結果になることを保証**
 
@@ -193,31 +200,41 @@ backend/
   arena.py         AI同士の並列対戦・勝率の信頼区間
   ga_trainer.py    遺伝的アルゴリズムによる係数学習（旧）
   ai_benchmark.py  AI同士の対戦ベンチマーク（旧）
-  web_api.py       Web版から呼ぶ JSON API
+  web_api.py       JSON API の Python 版（Web版の wasm-engine.ts が同じ形の値を返す基準）
   gui.py / main.py GUI版 / ターミナル版
 backend_rust/      Rust 版エンジン（Python から import reversi_engine で使う）
   src/board.rs     合法手生成・石の反転
   src/eval.rs      線形評価 / src/pattern.rs パターン評価
   src/selfplay.rs  自己対戦の学習データ生成 / src/train.rs 重みの学習（共役勾配法）
   src/search.rs    反復深化 PVS 探索・置換表
+  src/levels.rs    Lv.1〜4 と読み筋（Web版用、Python 版と一致）
+  src/book.rs / openings.rs  定石の検索・定石名の判定（Web版用、Python 版と一致）
+  src/wasm.rs      ブラウザから呼ぶ関数（WebAssembly）/ src/clock.rs 時刻（ブラウザでは performance.now）
   src/lib.rs       Python バインディング（PyO3）
-tests/             pytest（tests/test_rust_engine.py で Python 版との一致を確認）
+tests/             pytest（test_rust_engine.py・test_rust_web_port.py で Python 版との一致を確認）
 frontend/
   src/app.ts       盤面UI・対局の進行
-  src/worker.ts    Pyodide を読み込み Python エンジンを実行する Web Worker
+  src/worker.ts    WebAssembly のエンジンと重み・定石を読み込む Web Worker
+  src/wasm-engine.ts  エンジンの薄いラッパー（Worker と Node のテストで共用）
   src/engine.ts    Worker との通信
+  scripts/smoke-test.mjs  ビルドしたエンジンを Node で動かす確認（CI でも実行）
 ```
 
 ## Web版の仕組み
 
 ```
 ブラウザ（メインスレッド）            Web Worker
-  app.ts  ── postMessage ──▶  worker.ts ── Pyodide(CPython) ──▶ backend/*.py
-   盤面UI   ◀── JSON 結果 ───            web_api.py → alphabeta_ai.py など
+  app.ts  ── postMessage ──▶  worker.ts ── wasm-engine.ts ──▶ reversi_engine.wasm（backend_rust）
+   盤面UI   ◀── JSON 結果 ───             pattern_weights.bin（パターン評価）・opening_book.txt（定石）
 ```
+
+- 以前は Python 一式（Pyodide、約10MB）をブラウザに読み込んでいた。今は WebAssembly 145KB ＋ 重み（圧縮後 約1.7MB）＋ 定石
+- wasm-bindgen などの追加の道具は使わず、数値だけをやり取りする素の関数として公開している（64ビットの盤面は BigInt で受け渡し）。
+  ブラウザでは Rust 標準の時計が使えないので、`performance.now()` を読み込んで持ち時間を測る
+- 移植した Lv.1〜4・読み筋・定石・定石名は、Python 版と同じ結果になることを pytest で、
+  ビルドしたものが本当に動くことを Node のテスト（`npm test`）で確かめている
 
 ## 今後の予定
 
-- Web版の Rust（WebAssembly）化（ブラウザでもパターン評価と深い読みを使えるようにする）
 - パターン評価を使った自己対戦でデータを作り直し、学習を繰り返す
 - パターン評価の差分計算（打った手で変わるパターンだけを更新）による高速化

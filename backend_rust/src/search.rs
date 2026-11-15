@@ -4,11 +4,11 @@
 //! （tests/test_rust_engine.py で確認）。違いは速さだけなので、同じ時間ならより深く読める。
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
 
 use crate::board::{bits, legal_moves, play};
+use crate::clock::now;
 use crate::eval::{final_score, Evaluator};
 use crate::pattern::PatternWeights;
 
@@ -60,7 +60,8 @@ pub struct Searcher {
     pattern: Option<Arc<PatternWeights>>,
     tt: FxHashMap<(u64, u64), Entry>,
     nodes: u64,
-    deadline: Option<Instant>,
+    /// 打ち切る時刻（`clock::now()` の秒）
+    deadline: Option<f64>,
     /// 読みかけの深さで、ここまでに見つかった最善手（時間切れのときに使う）
     iter_best: Option<(u64, f64)>,
 }
@@ -96,7 +97,7 @@ impl Searcher {
     pub fn search(&mut self, p: u64, o: u64, time_limit: f64, max_depth: u32) -> SearchResult {
         self.tt.clear();
         self.nodes = 0;
-        let start = Instant::now();
+        let start = now();
         self.deadline = deadline_after(start, time_limit);
 
         let moves = legal_moves(p, o);
@@ -124,7 +125,7 @@ impl Searcher {
         self.tt.clear();
         self.nodes = 0;
         self.deadline = None;
-        let r = self.deepen(p, o, moves, Instant::now(), f64::INFINITY, 60);
+        let r = self.deepen(p, o, moves, now(), f64::INFINITY, 60);
         debug_assert!(r.solved);
         (r.best_move, r.score)
     }
@@ -135,7 +136,7 @@ impl Searcher {
         p: u64,
         o: u64,
         moves: u64,
-        start: Instant,
+        start: f64,
         time_limit: f64,
         max_depth: u32,
     ) -> SearchResult {
@@ -167,7 +168,7 @@ impl Searcher {
                 solved = true;
                 break;
             }
-            if start.elapsed().as_secs_f64() > time_limit * NEXT_DEPTH_TIME_RATIO {
+            if now() - start > time_limit * NEXT_DEPTH_TIME_RATIO {
                 break; // 残り時間では次の深さの最初の手すら読み終わらない
             }
         }
@@ -201,7 +202,7 @@ impl Searcher {
 
     fn check_time(&self) -> Result<(), Timeout> {
         match self.deadline {
-            Some(d) if Instant::now() > d => Err(Timeout),
+            Some(d) if now() > d => Err(Timeout),
             _ => Ok(()),
         }
     }
@@ -361,14 +362,9 @@ fn cmp_f64(a: f64, b: f64) -> std::cmp::Ordering {
     a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
 }
 
-/// `time_limit` 秒後の時刻。無限大（や大きすぎる値）なら制限なし。
-fn deadline_after(start: Instant, time_limit: f64) -> Option<Instant> {
-    if !time_limit.is_finite() {
-        return None;
-    }
-    Duration::try_from_secs_f64(time_limit.max(0.0))
-        .ok()
-        .and_then(|d| start.checked_add(d))
+/// `time_limit` 秒後の時刻。無限大や NaN なら制限なし。
+fn deadline_after(start: f64, time_limit: f64) -> Option<f64> {
+    time_limit.is_finite().then(|| start + time_limit.max(0.0))
 }
 
 #[cfg(test)]
@@ -467,7 +463,7 @@ mod tests {
     fn respects_time_limit() {
         let mut s = searcher();
         let (p, o) = random_position(5, 8);
-        let t = Instant::now();
+        let t = std::time::Instant::now();
         let r = s.search(p, o, 0.05, 60);
         assert!(t.elapsed().as_secs_f64() < 0.5);
         assert_ne!(r.best_move & legal_moves(p, o), 0);
@@ -475,10 +471,9 @@ mod tests {
 
     #[test]
     fn deadline_handles_extreme_values() {
-        let now = Instant::now();
-        assert!(deadline_after(now, f64::INFINITY).is_none());
-        assert!(deadline_after(now, f64::NAN).is_none());
-        assert!(deadline_after(now, 1e300).is_none());
-        assert!(deadline_after(now, 1.0).is_some());
+        assert!(deadline_after(0.0, f64::INFINITY).is_none());
+        assert!(deadline_after(0.0, f64::NAN).is_none());
+        assert_eq!(deadline_after(1.0, -5.0), Some(1.0));
+        assert_eq!(deadline_after(1.0, 2.0), Some(3.0));
     }
 }
