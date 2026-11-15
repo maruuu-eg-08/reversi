@@ -9,6 +9,7 @@ pub mod eval;
 pub mod pattern;
 pub mod search;
 pub mod selfplay;
+pub mod train;
 
 #[cfg(feature = "python")]
 // PyO3 0.22 のマクロが展開するコードに clippy::useless_conversion が誤って反応するため
@@ -148,6 +149,66 @@ mod python {
         Ok(pyo3::types::PyBytes::new_bound(py, &bytes))
     }
 
+    /// 自己対戦データからパターン評価の重みを学習し、out_path に保存する。
+    /// 段階ごとの結果を辞書のリストで返す。進み具合は標準エラーに表示する。探索中は GIL を手放す。
+    #[pyfunction]
+    #[allow(clippy::too_many_arguments)]
+    fn train_patterns(
+        py: Python<'_>,
+        data_path: &str,
+        out_path: &str,
+        lam: f64,
+        max_iter: usize,
+        tol: f64,
+        valid_mod: u32,
+        threads: usize,
+        coeffs: Vec<f64>,
+        weights: Vec<f64>,
+    ) -> PyResult<Vec<std::collections::HashMap<&'static str, f64>>> {
+        if valid_mod == 0 {
+            return Err(PyValueError::new_err("valid_mod は 1 以上にしてください"));
+        }
+        let linear = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
+        let records = crate::selfplay::read_data_file(std::path::Path::new(data_path))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let cfg = crate::train::TrainConfig {
+            lambda: lam,
+            max_iter,
+            tol,
+            valid_mod,
+            threads,
+        };
+        let (w, reports) = py.allow_threads(|| {
+            let start = std::time::Instant::now();
+            crate::train::train(&records, &cfg, &linear, &mut |r| {
+                eprintln!(
+                    "stage {:2}: 学習 {:>8} / 検証 {:>7} 局面, {:3} 回反復, 検証 RMSE {:.2}（線形評価 {:.2}） ({:.0}s)",
+                    r.stage, r.n_train, r.n_valid, r.iterations, r.valid_rmse, r.linear_rmse,
+                    start.elapsed().as_secs_f64()
+                );
+            })
+        });
+        w.save(out_path)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(reports
+            .iter()
+            .map(|r| {
+                std::collections::HashMap::from([
+                    ("stage", r.stage as f64),
+                    ("n_train", r.n_train as f64),
+                    ("n_valid", r.n_valid as f64),
+                    ("iterations", r.iterations as f64),
+                    ("train_rmse", r.train_rmse),
+                    ("valid_rmse", r.valid_rmse),
+                    ("valid_r2", r.valid_r2),
+                    ("linear_rmse", r.linear_rmse),
+                    ("linear_r2", r.linear_r2),
+                    ("clamped", r.clamped as f64),
+                ])
+            })
+            .collect())
+    }
+
     #[pymodule]
     fn reversi_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(legal_moves, m)?)?;
@@ -157,6 +218,7 @@ mod python {
         m.add_class::<PatternEval>()?;
         m.add_function(wrap_pyfunction!(generate_games, m)?)?;
         m.add("RECORD_SIZE", crate::selfplay::RECORD_SIZE)?;
+        m.add_function(wrap_pyfunction!(train_patterns, m)?)?;
         Ok(())
     }
 }

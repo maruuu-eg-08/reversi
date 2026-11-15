@@ -48,3 +48,22 @@ def test_resume_rejects_different_settings(tmp_path):
     with pytest.raises(SystemExit):
         generate(path, log=quiet, **{**SMALL, "depth": 3})
     assert os.path.getsize(path) > RECORD_SIZE
+
+
+def test_training_produces_weights_that_python_and_rust_agree_on(tmp_path):
+    import reversi_engine
+
+    from patterns import PatternWeights
+    from train_patterns import train
+
+    data = generate(str(tmp_path / "d.bin"), log=quiet, **{**SMALL, "games": 40})
+    out = str(tmp_path / "w.bin")
+    reports = train(data, out, lam=1.0, max_iter=30, valid_every=4, threads=2)
+    assert len(reports) == 15
+    assert all(r["n_train"] + r["n_valid"] > 0 for r in reports[:12])
+    assert os.path.exists(out + ".json")
+    w = PatternWeights.load(out)
+    rust = reversi_engine.PatternEval(out)
+    _, records = read_records(data)
+    for P, O, *_ in records[::7]:
+        assert rust.evaluate(P, O) == w.evaluate(P, O, legal_moves(P, O), legal_moves(O, P))
