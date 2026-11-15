@@ -124,6 +124,30 @@ README (#17) are done.
   (λ = 30; commit adopted versions only).
 - The web Lv.5 uses Rust (wasm) + pattern evaluation + opening book. Lv.1-4 are Rust ports identical to Python.
 
-Next candidates (decide with the user):
-- Regenerate self-play data with the pattern evaluation and retrain (check with arena).
-- Incremental pattern updates to speed up the search.
+- The repository About section was updated (description, homepage link to the game, topics:
+  rust, webassembly, game-ai, othello, reversi, machine-learning).
+
+## Plan for the next session (proposed on 2026-11-16, not yet decided)
+
+Options presented to the user (goal: a portfolio for graduate schools and IT companies abroad, balancing
+strength, technical depth and being able to explain the work):
+
+| Option | What | Time | Why |
+|---|---|---|---|
+| **A. Iterate the learning loop** | Regenerate self-play data with the pattern-evaluation Lv.5 (`gen_data.py`; the current data was played with the linear evaluation), retrain (`train_patterns.py`), and check with `arena.py` that it is stronger | ~1-2 h of computation (runs in the background) | another measurable strength gain |
+| **B. Faster search** | Incremental pattern updates (recompute only the patterns touched by a move) and a dedicated fast endgame solver | about half a day | deeper search in the same time; good interview material |
+| **C. Technical write-up** | `docs/DESIGN.md` in English: design, what worked and what did not, plus likely interview questions and how to answer them | 2-3 h | the user can explain the project in their own words; usable in applications |
+| **D. Neural-network evaluation** | Train a small neural network on the existing data and compare it with the pattern evaluation (Colab GPUs possible) | a day or more | machine-learning experience; a step toward reinforcement learning (AWS later) |
+
+Recommendation given to the user: **A + C**. Start A's data generation in the morning (~70 min in the
+background), write C together while it runs (explaining the content to the user in Japanese), then retrain
+and verify with arena. Keep B and D for later.
+
+Open questions for the user (ask at the start of the next session if still undecided):
+1. Which option(s) to do (recommended: A + C).
+2. The write-up language (recommended: English on GitHub; explain it in Japanese in the chat).
+
+Notes for option A: the existing data `data/selfplay-200k.bin` (~260 MB, gitignored) was generated with the
+linear evaluation. `gen_data.py` / `selfplay.rs` currently always use the linear evaluation for self-play, so
+they need an option to search with the pattern weights. Use a new output file (settings are stored in the
+header and resuming refuses mismatched settings). Commit new weights only if arena shows a significant gain.
