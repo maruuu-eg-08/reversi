@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "reversi-engine"
+version = "0.1.0"
+description = "Rust implementation of the Lv.5 reversi search engine (Python bindings)"
+requires-python = ">=3.10"
+
+[tool.maturin]
+features = ["python", "pyo3/extension-module"]
+module-name = "reversi_engine"

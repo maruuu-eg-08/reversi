@@ -27,9 +27,11 @@ on:
       rank_depth:
         description: 相手の手を選ぶときの読みの深さ
         default: "4"
-      python:
-        description: Python のバージョン（例 3.12, pypy3.10）
-        default: "3.12"
+      engine:
+        description: 探索の実装（rust は python より約80倍速い。結果は同じ）
+        type: choice
+        options: [rust, python]
+        default: rust
       minutes:
         description: 計算に使う最大の分数（ジョブ上限の6時間より短くする）
         default: "330"
@@ -49,14 +51,18 @@ jobs:
       REPLIES: ${{ inputs.replies }}
       RANK_DEPTH: ${{ inputs.rank_depth }}
       MINUTES: ${{ inputs.minutes }}
-      # 途中結果は設定ごとに分ける（Python の種類が違っても計算結果は同じなので共有する）
+      # 途中結果は設定ごとに分ける（Rust 版と Python 版は計算結果が同じなので共有する）
       CACHE_KEY: book-d${{ inputs.depth }}-f${{ inputs.full_plies }}-p${{ inputs.plies }}-r${{ inputs.replies }}-k${{ inputs.rank_depth }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ inputs.python }}
+          python-version: "3.12"
+
+      - name: Rust 版エンジンをビルド
+        if: inputs.engine == 'rust'
+        run: pip install ./backend_rust && python -c "import reversi_engine"
 
       - name: 途中結果を復元
         uses: actions/cache/restore@v4
@@ -89,7 +95,7 @@ jobs:
           {
             echo "## 定石の生成"
             echo "- 設定: depth=$DEPTH full_plies=$FULL_PLIES plies=$PLIES replies=$REPLIES rank_depth=$RANK_DEPTH"
-            echo "- Python: $(python -c 'import platform; print(platform.python_implementation(), platform.python_version())'), CPU $(nproc) コア"
+            echo "- エンジン: $(python -c 'from strong_ai import StrongAI; print(StrongAI(1).engine)'), CPU $(nproc) コア"
             echo "- この実行で読んだ局面: $((after - before))（累計 $after）"
             echo "- 結果: $result"
           } >> "$GITHUB_STEP_SUMMARY"
