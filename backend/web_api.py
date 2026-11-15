@@ -10,6 +10,7 @@ import time
 from ai_manager import create_ai
 from alphabeta_ai import AlphaBetaAI
 from bitboard import BitBoard
+from openings import identify
 from weights import WIN_SCORE
 
 
@@ -63,7 +64,18 @@ def ai_move(black, white, color, level, depth, time_limit=1.0):
         # Lv.4 は固定の深さ、Lv.5 は時間内に読み終えた深さ
         "depth": getattr(ai, "last_depth", getattr(ai, "depth", None)),
         "solved": getattr(ai, "solved", False),
+        "book": getattr(ai, "from_book", False),  # 定石の手かどうか
     })
+
+
+def opening(transcript):
+    """棋譜（"f5d6c3..." 形式、パスは含めない）に一致する定石名を返す。"""
+    moves = [transcript[i : i + 2] for i in range(0, len(transcript), 2)]
+    try:
+        op = identify(moves)
+    except ValueError:
+        op = None
+    return json.dumps({"name": op.display_name if op else None})
 
 
 def analyze(black, white, color, depth):

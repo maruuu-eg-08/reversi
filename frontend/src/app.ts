@@ -18,6 +18,7 @@ const recordEl = $<HTMLOListElement>("record");
 const recordCount = $<HTMLSpanElement>("record-count");
 const copyBtn = $<HTMLButtonElement>("copy-record");
 const copyStatus = $<HTMLParagraphElement>("copy-status");
+const openingNameEl = $<HTMLElement>("opening-name");
 const COPY_HINT = copyStatus.textContent?.trim() ?? "";
 const analysisList = $<HTMLOListElement>("analysis-list");
 
@@ -185,6 +186,7 @@ function renderRecord() {
   if (renderedPlies === plies.length) return;
   const grew = plies.length > renderedPlies;
   renderedPlies = plies.length;
+  void updateOpeningName();
   recordEl.replaceChildren();
   const moves = plies.filter((p) => p.move).length;
   recordCount.textContent = moves ? `${moves} 手` : "";
@@ -219,6 +221,18 @@ function renderRecord() {
     recordEl.appendChild(li);
   });
   if (grew) recordEl.scrollTop = recordEl.scrollHeight;
+}
+
+// 棋譜から定石名を調べる。名前の付いた定石は最長でも20手程度なので、それ以降は問い合わせない
+const OPENING_MAX_MOVES = 24;
+let openingName: string | null = null;
+async function updateOpeningName() {
+  const transcript = recordText();
+  if (transcript.length / 2 > OPENING_MAX_MOVES) return; // 定石を外れた後も最後の名前を表示し続ける
+  const name = transcript ? (await engine.opening(transcript)).name : null;
+  if (recordText() !== transcript) return; // 問い合わせ中に手が進んだ・戻った
+  openingName = name;
+  openingNameEl.textContent = openingName ?? "–";
 }
 
 function recordText(): string {
@@ -312,11 +326,13 @@ async function advance(id: number) {
       if (id !== gameId) return;
       $("stat-ms").textContent = `${res.ms.toLocaleString()} ms`;
       $("stat-nodes").textContent = res.nodes === null ? "–（探索なし）" : res.nodes.toLocaleString();
-      $("stat-depth").textContent = res.solved
-        ? `終局まで読み切り（${res.depth} 手先）`
-        : res.depth
-          ? `${res.depth} 手先まで`
-          : "–";
+      $("stat-depth").textContent = res.book
+        ? `定石の手（事前に ${res.depth} 手先まで解析済み）`
+        : res.solved
+          ? `終局まで読み切り（${res.depth} 手先）`
+          : res.depth
+            ? `${res.depth} 手先まで`
+            : "–";
       if (!res.move) throw new Error("AI が手を返しませんでした");
       const next = await engine.play(s, res.move[0], res.move[1]);
       if (id !== gameId) return;

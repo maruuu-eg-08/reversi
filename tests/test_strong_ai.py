@@ -118,3 +118,50 @@ def test_board_is_not_modified():
     before = (b.black, b.white)
     StrongAI(color, time_limit=0.1).get_move(b)
     assert (b.black, b.white) == before
+
+
+# ---------- 定石 ----------
+def test_book_move_is_played_without_searching():
+    from opening_book import OpeningBook
+
+    b, color = random_position(11, 12)
+    P, O = side(b, color)
+    # わざと最善でない手を登録し、読まずにその手を打つことを確かめる
+    scored = StrongAI(color, time_limit=float("inf")).score_moves(P, O, 2)
+    worst = scored[-1][0]
+    book = OpeningBook()
+    book.add(P, O, worst, -1.0, 7)
+    ai = StrongAI(color, time_limit=1.0, book=book)
+    i = worst.bit_length() - 1
+    assert ai.get_move(b) == (i // 8, i % 8)
+    assert ai.from_book is True
+    assert ai.nodes == 0
+    assert ai.last_depth == 7
+
+
+def test_falls_back_to_search_outside_book():
+    from opening_book import OpeningBook
+
+    b, color = random_position(12, 20)
+    ai = StrongAI(color, time_limit=0.1, book=OpeningBook())
+    assert ai.get_move(b) in b.listUp(color)
+    assert ai.from_book is False
+    assert ai.nodes > 0
+
+
+def test_score_moves_best_matches_search():
+    for seed in range(5):
+        b, color = random_position(seed + 30, 16)
+        P, O = side(b, color)
+        if legal_moves(P, O).bit_count() < 2:
+            continue
+        ai = StrongAI(color, time_limit=float("inf"), max_depth=3)
+        scored = ai.score_moves(P, O, 3)
+        _, score, _ = ai.search(P, O)
+        assert scored[0][1] == pytest.approx(score)
+        assert [s for _, s in scored] == sorted((s for _, s in scored), reverse=True)
+
+
+def test_create_ai_level5_uses_book_by_default():
+    assert create_ai("5", 1).book is not None
+    assert create_ai("5", 1, use_book=False).book is None

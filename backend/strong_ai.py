@@ -9,6 +9,7 @@ Lv.4（AlphaBetaAI）からの主な改良点:
 - 行ごとの重み表を前計算し、位置評価をビットの走査なしで8回の表引きで計算
 - 終盤は残りマスまで読み切り、石差を正確に求める（完全読み）
 - 評価関数に「開放度（空きマスに接する石の数）」を追加
+- 序盤は定石（opening_book.py、事前に深く読んだ手の表）にある局面なら、読まずにその手を打つ
 
 すべて純粋な Python なので、Pyodide（ブラウザ）でもそのまま動く。
 """
@@ -104,7 +105,8 @@ def _row_tables(weights):
 
 
 class StrongAI:
-    def __init__(self, color, time_limit=1.0, max_depth=60, eval_coeffs=None, weights=None):
+    def __init__(self, color, time_limit=1.0, max_depth=60, eval_coeffs=None, weights=None, book=None):
+        """book: probe(P, O) で定石の手を返すオブジェクト（OpeningBook）。None なら定石を使わない。"""
         self.color = color
         self.time_limit = time_limit
         self.max_depth = max_depth
@@ -118,6 +120,8 @@ class StrongAI:
         self.last_depth = 0
         self.last_score = 0
         self.solved = False  # 直前の手が終局まで読み切った結果かどうか
+        self.book = book
+        self.from_book = False  # 直前の手が定石から選んだものかどうか
         self._deadline = float("inf")
         self._iter_best = None
 
@@ -286,6 +290,7 @@ class StrongAI:
         self.tt = {}
         self.nodes = 0
         self.solved = False
+        self.from_book = False
         start = time.perf_counter()
         self._deadline = start + self.time_limit
 
@@ -295,6 +300,13 @@ class StrongAI:
         if moves & (moves - 1) == 0:  # 打てる手が1つだけ
             self.last_depth = 0
             return moves, 0, 0
+        if self.book is not None:
+            hit = self.book.probe(P, O)
+            if hit is not None:
+                self.from_book = True
+                self.last_depth = hit.depth
+                self.last_score = hit.score
+                return hit.move, hit.score, hit.depth
 
         n_empty = 64 - (P | O).bit_count()
         best_move, best_score, done_depth = 0, 0, 0
@@ -320,6 +332,23 @@ class StrongAI:
         self.last_depth = done_depth
         self.last_score = best_score
         return best_move, best_score, done_depth
+
+    def score_moves(self, P, O, depth):
+        """全合法手を depth 手先まで読んだ評価値（手番側 P から見た値）を、良い順に [(手, 評価値)] で返す。
+
+        各手を全幅窓で読むので search より遅いが、最善手以外の評価値も正確に分かる。
+        同じ評価値の手はマスの番号順に並べ、結果が毎回同じになるようにしている。
+        """
+        self.tt = {}
+        self.nodes = 0
+        self._deadline = float("inf")
+        results = []
+        for x in self._ordered(P, O, legal_moves(P, O), 0, depth):
+            f = flips(P, O, x)
+            score = -self._negamax(O ^ f, P | x | f, depth - 1, -float("inf"), float("inf"))
+            results.append((x, score))
+        results.sort(key=lambda t: (-t[1], t[0]))
+        return results
 
     # ---------- 他の AI と同じインターフェース ----------
     def get_move(self, board):
