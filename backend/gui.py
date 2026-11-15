@@ -20,13 +20,13 @@ hint_color = (60, 170, 60)
 
 
 def draw_board(screen, board, hints=()):
-    """盤面と石、置ける場所のヒントを描画する。"""
+    """Draw the board, the discs and legal-move hints."""
     screen.fill(green, pygame.Rect(0, 0, board_px, board_px))
     for i in range(9):
         pygame.draw.line(screen, black, (0, i * square_size), (board_px, i * square_size), 2)
         pygame.draw.line(screen, black, (i * square_size, 0), (i * square_size, board_px), 2)
 
-    grid = board.grid  # 8x8 配列への変換は1フレームに1回だけ
+    grid = board.grid  # convert to an 8x8 array once per frame
     for row in range(8):
         for col in range(8):
             x = col * square_size + square_size // 2
@@ -43,7 +43,7 @@ def draw_board(screen, board, hints=()):
 
 
 def draw_status(screen, font, board, message):
-    """画面下部に石数と手番などのメッセージを表示する。"""
+    """Show disc counts and turn messages at the bottom of the window."""
     screen.fill(dark_green, pygame.Rect(0, board_px, board_px, status_height))
     b, w = board.count_discs(1), board.count_discs(-1)
     score = font.render(f"Black {b} - {w} White", True, white)
@@ -80,7 +80,7 @@ def main():
     button_white = pygame.Rect(200, 400, 240, 60)
 
     while True:
-        # ===== メニュー画面 =====
+        # ===== menu screen =====
         if game_state == "menu":
             screen.fill(green)
             title_text = title_font.render("Othello AI", True, black)
@@ -110,7 +110,7 @@ def main():
                     message = ""
                     game_state = "playing"
 
-        # ===== 対局画面 =====
+        # ===== game screen =====
         elif game_state == "playing":
             current_moves = board.listUp(current_color)
 
@@ -132,13 +132,13 @@ def main():
                     if event.type == pygame.MOUSEBUTTONDOWN:
                         x, y = event.pos
                         if y >= board_px:
-                            continue  # ステータスバーのクリックは無視
+                            continue  # ignore clicks on the status bar
                         if board.put_disc(y // square_size, x // square_size, current_color):
                             current_color *= -1
                             message = ""
                 draw_board(screen, board, hints=current_moves)
             else:
-                # 「思考中」を表示してから AI に考えさせる
+                # show "thinking" before the AI searches
                 draw_board(screen, board)
                 draw_status(screen, font, board, "AI is thinking...")
                 pygame.display.update()
@@ -148,12 +148,12 @@ def main():
                 if best_move is not None:
                     board.put_disc(best_move[0], best_move[1], ai_color)
                 current_color *= -1
-                pygame.event.clear()  # 思考中のクリックを捨てる
+                pygame.event.clear()  # drop clicks made while the AI was thinking
                 draw_board(screen, board)
 
             draw_status(screen, font, board, message)
 
-        # ===== 結果画面 =====
+        # ===== result screen =====
         elif game_state == "result":
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:

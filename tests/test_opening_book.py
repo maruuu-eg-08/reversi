@@ -16,11 +16,11 @@ from opening_book import (
 )
 from strong_ai import flips, legal_moves
 
-START = (0x0000000810000000, 0x0000001008000000)  # (黒=手番, 白)
+START = (0x0000000810000000, 0x0000001008000000)  # (black = to move, white)
 
 
 def _naive(b, f):
-    """マスごとに座標変換 f(row, col) を適用する素朴な実装（比較用）。"""
+    """Naive version applying a coordinate map f(row, col) square by square (for comparison)."""
     out = 0
     for i in range(64):
         if b >> i & 1:
@@ -30,7 +30,7 @@ def _naive(b, f):
 
 
 def _random_position(rng, plies):
-    """開始局面から plies 手ランダムに進めた (手番側, 相手側)。"""
+    """(player, opponent) after `plies` random moves from the start."""
     P, O = START
     for _ in range(plies):
         moves = legal_moves(P, O)
@@ -69,7 +69,7 @@ def test_transforms_are_eight_distinct_bijections_with_inverse():
     rng = random.Random(2)
     b = _random_bits(rng)
     images = {transform(b, s) for s in range(N_SYMMETRIES)}
-    assert len(images) == 8  # ランダムな盤面なら8通りすべて異なる
+    assert len(images) == 8  # a random board has 8 distinct images
     for s in range(N_SYMMETRIES):
         for _ in range(50):
             x = _random_bits(rng)
@@ -78,7 +78,7 @@ def test_transforms_are_eight_distinct_bijections_with_inverse():
 
 
 def test_legal_moves_commute_with_symmetry():
-    """回転・反転した局面の合法手は、元の合法手を同じように回転・反転したもの。"""
+    """Legal moves of a transformed position are the transformed legal moves."""
     rng = random.Random(3)
     for _ in range(100):
         P, O = _random_position(rng, rng.randint(0, 40))
@@ -107,7 +107,7 @@ def test_square_names_round_trip():
 
 
 def test_probe_returns_move_in_queried_orientation():
-    """ある向きで登録した手が、回転・反転した局面からも正しい向きで引ける。"""
+    """A move stored in one orientation is returned correctly for every rotated/reflected query."""
     rng = random.Random(5)
     book = OpeningBook()
     P, O = _random_position(rng, 10)
@@ -161,7 +161,7 @@ def test_load_reports_line_number_on_corrupt_file(tmp_path):
 
 
 def test_probe_ignores_illegal_entry_from_file(tmp_path):
-    """ファイルが壊れていて合法手でない手が書かれていても、それを返さない。"""
+    """An illegal move in a corrupt file is never returned."""
     cP, cO, _ = canonical(*START)
     path = tmp_path / "book.txt"
     path.write_text(f"{cP:016x} {cO:016x} a1 0.00 1\n")

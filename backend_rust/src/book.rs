@@ -1,25 +1,25 @@
-//! 序盤の定石（opening book）の検索。`backend/opening_book.py` と同じ形式のファイルを読み、同じ手を返す。
+//! Opening book lookup. Reads the same file format as `backend/opening_book.py` and returns the same moves.
 //!
-//! 局面は8通りの回転・反転のうち最小のもの（正規形）で保存されているので、
-//! 引くときは同じ変換で正規形にし、見つかった手を逆変換して元の向きに戻す。
+//! Positions are stored in canonical form (the smallest of the 8 rotations/reflections), so a lookup
+//! canonicalizes the query the same way and maps the stored move back to the original orientation.
 
 use rustc_hash::FxHashMap;
 
 use crate::board::legal_moves;
 
-/// 上下反転（1行目 ↔ 8行目）
+/// Flip vertically (row 1 <-> row 8)
 fn flip_vertical(b: u64) -> u64 {
     b.swap_bytes()
 }
 
-/// 左右反転（a列 ↔ h列）
+/// Mirror horizontally (a-file <-> h-file)
 fn mirror_horizontal(b: u64) -> u64 {
     let b = ((b >> 1) & 0x5555_5555_5555_5555) | ((b & 0x5555_5555_5555_5555) << 1);
     let b = ((b >> 2) & 0x3333_3333_3333_3333) | ((b & 0x3333_3333_3333_3333) << 2);
     ((b >> 4) & 0x0F0F_0F0F_0F0F_0F0F) | ((b & 0x0F0F_0F0F_0F0F_0F0F) << 4)
 }
 
-/// a1-h8 の対角線で折り返す
+/// Reflect in the a1-h8 diagonal
 fn transpose(mut b: u64) -> u64 {
     let t = 0x0F0F_0F0F_0000_0000 & (b ^ (b << 28));
     b ^= t ^ (t >> 28);
@@ -30,7 +30,7 @@ fn transpose(mut b: u64) -> u64 {
     b
 }
 
-/// 対称変換 s（0〜7）。bit 2: 転置, bit 1: 上下反転, bit 0: 左右反転 の順（Python 版と同じ）
+/// Symmetry s (0-7): bit 2 transpose, then bit 1 vertical flip, then bit 0 mirror (same as Python)
 pub fn transform(mut b: u64, s: u8) -> u64 {
     if s & 4 != 0 {
         b = transpose(b);
@@ -57,7 +57,7 @@ pub fn inverse_transform(mut b: u64, s: u8) -> u64 {
     b
 }
 
-/// 8通りの変換のうち最小の (P, O) と、そこへ移す変換番号
+/// The smallest (P, O) among the 8 images and the symmetry that produces it
 pub fn canonical(p: u64, o: u64) -> (u64, u64, u8) {
     (0..8u8)
         .map(|s| (transform(p, s), transform(o, s), s))
@@ -78,7 +78,7 @@ pub struct OpeningBook {
 }
 
 impl OpeningBook {
-    /// `opening_book.txt` の内容を読む。
+    /// Parse the contents of `opening_book.txt`.
     pub fn parse(text: &str) -> Result<Self, String> {
         let mut entries = FxHashMap::default();
         for (lineno, line) in text.lines().enumerate() {
@@ -86,7 +86,7 @@ impl OpeningBook {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            let err = || format!("{}行目: 定石ファイルの形式が正しくありません", lineno + 1);
+            let err = || format!("line {}: invalid opening book line", lineno + 1);
             let f: Vec<&str> = line.split_whitespace().collect();
             if f.len() != 5 {
                 return Err(err());
@@ -113,7 +113,7 @@ impl OpeningBook {
         self.entries.is_empty()
     }
 
-    /// 局面が表にあれば、問い合わせた向きに戻した手を返す（合法手でなければ None）。
+    /// If the position is in the book, the move in the queried orientation (None if it is not legal).
     pub fn probe(&self, p: u64, o: u64) -> Option<BookHit> {
         let (cp, co, s) = canonical(p, o);
         let &(mv, score, depth) = self.entries.get(&(cp, co))?;

@@ -14,7 +14,7 @@ def make_board(black=(), white=()):
     return b
 
 
-# ---- ビット演算を使わない素朴な参照実装（正解データ用） ----
+# ---- naive reference implementation without bit tricks (ground truth) ----
 def naive_flips(grid, row, col, color):
     if grid[row][col] != 0:
         return []
@@ -35,7 +35,7 @@ def naive_moves(grid, color):
 
 
 def perft(board, color, depth, passed=False):
-    """depth 手先までの局面数を数える（パスも1手として数える）。"""
+    """Count positions `depth` plies ahead (a pass counts as a ply)."""
     if depth == 0:
         return 1
     moves = board.listUp(color)
@@ -76,7 +76,7 @@ def test_illegal_move_leaves_board_unchanged(row, col):
 
 
 def test_no_wraparound_between_rows():
-    # 黒(0,7)の右隣はビット上は(1,0)。行をまたいで挟めてはいけない
+    # the bit after black (0,7) is (1,0); a run must not wrap across rows
     b = make_board(black=[(0, 7)], white=[(1, 0)])
     assert (1, 1) not in b.listUp(1)
     assert b.get_flip_mask(1, 1, 1) == 0
@@ -89,13 +89,13 @@ def test_both_players_pass_means_game_over():
 
 
 def test_pass_when_only_opponent_can_move():
-    # 白は (0,2) に打って黒(0,1)を挟めるが、黒はどこにも打てない
+    # white can capture black (0,1) by playing (0,2), but black has no move
     b = make_board(black=[(0, 1)], white=[(0, 0)])
     assert not b.has_valid_move(1)
     assert b.listUp(-1) == [(0, 2)]
 
 
-# 既知の perft 値（オセロ初期局面から）
+# known perft values from the Othello start position
 @pytest.mark.parametrize(
     "depth,expected",
     [(1, 4), (2, 12), (3, 56), (4, 244), (5, 1396), (6, 8200)],
@@ -105,7 +105,7 @@ def test_perft(depth, expected):
 
 
 def test_matches_naive_implementation_on_random_games():
-    """ランダム対局 200 局で、合法手と反転結果が素朴な実装と一致することを確認する。"""
+    """Over 200 random games, legal moves and flips match the naive implementation."""
     rng = random.Random(42)
     for _ in range(200):
         b = BitBoard()

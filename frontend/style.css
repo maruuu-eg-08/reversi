@@ -84,7 +84,7 @@ a {
   }
 }
 
-/* ---------- 盤面 ---------- */
+/* ---------- board ---------- */
 .board-frame {
   position: relative;
   display: grid;
@@ -115,7 +115,7 @@ a {
 
 @media (hover: none) {
   .board-toolbar .keys {
-    display: none; /* タッチ端末ではキー操作の説明を出さない */
+    display: none; /* no key help on touch devices */
   }
 }
 
@@ -159,7 +159,7 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* 棋譜 */
+/* game record */
 .record {
   margin: 0;
   padding: 0;
@@ -223,7 +223,7 @@ button:focus-visible {
   color: var(--muted);
 }
 
-/* オン/オフのスイッチ */
+/* on/off switch */
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -394,7 +394,7 @@ button:focus-visible {
   background: rgba(255, 255, 255, 0.35);
 }
 
-/* 評価値ヒートマップ */
+/* score heatmap */
 .eval {
   position: absolute;
   inset: 8%;
@@ -445,7 +445,7 @@ button:focus-visible {
   }
 }
 
-/* ---------- サイドパネル ---------- */
+/* ---------- side panel ---------- */
 .panel {
   display: grid;
   gap: 16px;

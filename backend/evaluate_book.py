@@ -1,12 +1,12 @@
-"""定石の手と、定石なしで短時間読んだ手を比べる。
+"""Compare opening-book moves with moves from a short search without the book.
 
-arena.py と同じ「ランダムに数手進めた序盤局面」を作り、
-  - Lv.5 が time_limit 秒で選ぶ手（定石なし）
-  - 定石の手（深さ10で読んだ最善手）
-が一致する割合と、違う場合に深く読むとどれだけ損な手か（評価値の差）を測る。
-対局の勝敗より少ない計算で、定石が手の選び方をどれだけ変えるかが分かる。
+On the same random openings as arena.py, compare
+  - the move Lv.5 picks in time_limit seconds (without the book), and
+  - the book move (best move of a depth-10 search),
+measuring how often they agree and, when they differ, how much worse the short-search move is
+according to a deep search. This shows how much the book changes move choice, more cheaply than games.
 
-使い方:
+Usage:
     python evaluate_book.py -n 400 --time-limit 0.3
 """
 
@@ -23,7 +23,7 @@ def _compare(args):
     black, white, color = random_opening(seed, opening_moves)
     P, O = (black, white) if color == 1 else (white, black)
     moves = legal_moves(P, O)
-    if not moves & (moves - 1):  # 合法手が0か1つなら比べる意味がない
+    if not moves & (moves - 1):  # nothing to compare with zero or one legal move
         return None
     hit = default_book().probe(P, O)
     if hit is None:
@@ -31,7 +31,7 @@ def _compare(args):
     fast, _, depth = StrongAI(1, time_limit=time_limit).search(P, O)
     if fast == hit.move:
         return True, 0.0, depth
-    # 短時間の手を、定石と同じ深さになるよう1手進めた局面から読み直す
+    # re-search the short-search move one ply deeper so both use the same depth
     f = flips(P, O, fast)
     _, child, _ = StrongAI(1, time_limit=float("inf"), max_depth=hit.depth - 1).search(O ^ f, P | fast | f)
     return False, hit.score + child, depth
@@ -52,9 +52,9 @@ def main():
     agree = sum(r[0] for r in results)
     losses = [r[1] for r in results if not r[0]]
     depth = sum(r[2] for r in results) / len(results)
-    print(f"{len(results)} 局面  一致 {agree} ({agree / len(results):.1%})  {args.time_limit}秒探索の平均の深さ {depth:.1f}")
+    print(f"{len(results)} positions  agree {agree} ({agree / len(results):.1%})  mean depth of the {args.time_limit}s search {depth:.1f}")
     if losses:
-        print(f"違う手 {len(losses)} 局面  深く読んだ評価での損失: 平均 {sum(losses) / len(losses):.2f}, 最大 {max(losses):.2f}")
+        print(f"different move in {len(losses)} positions; loss by deep search: mean {sum(losses) / len(losses):.2f}, max {max(losses):.2f}")
 
 
 if __name__ == "__main__":

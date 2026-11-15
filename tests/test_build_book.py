@@ -6,7 +6,7 @@ from build_book import START, Settings, build
 from opening_book import N_SYMMETRIES, canonical, inverse_transform, transform
 from strong_ai import StrongAI, flips, legal_moves
 
-# 小さな設定で、テストが数秒で終わるようにする
+# small settings so the tests finish in seconds
 SMALL = Settings(depth=3, full_plies=3, plies=6, replies=2, rank_depth=2)
 
 
@@ -25,7 +25,7 @@ def _all_moves(m):
 
 
 def _positions_up_to(plies):
-    """開始局面から plies 手以内に現れるすべての局面。"""
+    """Every position reachable within `plies` plies of the start."""
     level = {START}
     out = set(level)
     for _ in range(plies):
@@ -40,12 +40,12 @@ def _positions_up_to(plies):
 
 def test_every_position_within_full_plies_is_in_book(small_book):
     for P, O in _positions_up_to(SMALL.full_plies):
-        if legal_moves(P, O) & (legal_moves(P, O) - 1):  # 合法手が2つ以上ある局面
+        if legal_moves(P, O) & (legal_moves(P, O) - 1):  # positions with at least two legal moves
             assert small_book.probe(P, O) is not None
 
 
 def test_book_moves_match_a_fixed_depth_search(small_book):
-    """定石の手は、同じ深さで読んだ最善手と一致する（どの向きの局面でも）。"""
+    """Book moves equal the best move of a search at the same depth (in any orientation)."""
     rng = random.Random(0)
     positions = sorted(_positions_up_to(SMALL.full_plies))
     for P, O in rng.sample(positions, 15):
@@ -55,14 +55,14 @@ def test_book_moves_match_a_fixed_depth_search(small_book):
         tP, tO = transform(P, s), transform(O, s)
         hit = small_book.probe(tP, tO)
         move, _, _ = StrongAI(1, time_limit=float("inf"), max_depth=SMALL.depth).search(tP, tO)
-        # 対称な局面では同じ価値の手が複数あり得るので、評価値が等しいことを確かめる
+        # symmetric positions can have several equally good moves, so compare scores
         scores = dict(StrongAI(1, time_limit=float("inf"), max_depth=SMALL.depth).score_moves(tP, tO, SMALL.depth))
         assert scores[hit.move] == pytest.approx(scores[move])
 
 
 @pytest.mark.parametrize("ai_is_black", [True, False])
 def test_book_covers_games_where_ai_follows_book(small_book, ai_is_black):
-    """AI が定石どおりに打ち、相手が有力な手を打つ限り、AI の番の局面は定石に載っている。"""
+    """While the AI follows the book and the opponent plays a top reply, every AI position is in the book."""
     rng = random.Random(1 if ai_is_black else 2)
     for _ in range(20):
         P, O = START
@@ -74,12 +74,12 @@ def test_book_covers_games_where_ai_follows_book(small_book, ai_is_black):
             if ai_to_move:
                 hit = small_book.probe(P, O)
                 if moves & (moves - 1):
-                    assert hit is not None, f"ply {ply} で定石が見つからない"
+                    assert hit is not None, f"no book move at ply {ply}"
                 x = hit.move if hit else moves
             elif ply < SMALL.full_plies:
-                x = rng.choice(_all_moves(moves))  # 序盤は相手がどんな手を打ってもよい
+                x = rng.choice(_all_moves(moves))  # early on the opponent may play anything
             else:
-                # 生成時と同じく正規形の向きで順位を付ける（同点の手の並びが向きに左右されないように）
+                # rank in canonical orientation, as during generation (so ties do not depend on orientation)
                 cP, cO, s = canonical(P, O)
                 ranked = StrongAI(1, time_limit=float("inf")).score_moves(cP, cO, SMALL.rank_depth)
                 x = inverse_transform(rng.choice([m for m, _ in ranked[: SMALL.replies]]), s)
@@ -92,8 +92,8 @@ def test_build_is_deterministic_and_resumable(tmp_path):
     cache = tmp_path / "cache.txt"
     a = build(settings, processes=1, cache_path=str(cache), log=lambda *_: None)
     lines = cache.read_text().splitlines()
-    assert lines  # 読んだ結果がキャッシュに書かれている
-    # 途中で中断した状態（キャッシュの後半がない、最後の行が書きかけ）から再開しても同じ結果になる
+    assert lines  # search results were written to the cache
+    # resuming from an interrupted run (missing second half, half-written last line) gives the same result
     cache.write_text("\n".join(lines[: len(lines) // 2]) + "\n" + lines[-1][:10])
     b = build(settings, processes=1, cache_path=str(cache), log=lambda *_: None)
     c = build(settings, processes=2, log=lambda *_: None)

@@ -1,4 +1,4 @@
-#ユーザからの入力を配列のインデックス番号に変える関数
+# Turns the user's input into board coordinates
 def parse_input(user_input):
     user_input = user_input.lower().replace(" ", "")
 
@@ -15,7 +15,7 @@ class HumanPlayer:
 
     def get_move(self, board):
         while True:
-            message = "黒（あなたのターンです）:" if self.color == 1 else "白（あなたのターンです）"
+            message = "Black (your turn): " if self.color == 1 else "White (your turn): "
             rc = input(message)
 
             if rc == 'q':
@@ -23,7 +23,7 @@ class HumanPlayer:
 
             pos = parse_input(rc)
             if pos is None:
-                print("無効な入力です")
+                print("Invalid input")
                 continue
 
-            return pos #正常な座標を(row, col)で返す
+            return pos # a valid (row, col)

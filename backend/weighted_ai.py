@@ -9,7 +9,7 @@ class WeightedAI:
         self.weights = WEIGHTED_AI_WEIGHTS
 
     def evaluate(self, board):
-        # 🌟 NumPy（board.grid）を使わずに、整数のビット演算で計算
+        # integer bit operations instead of NumPy (board.grid)
         score = 0
         black = board.black
         white = board.white
@@ -21,7 +21,7 @@ class WeightedAI:
             elif white & mask:
                 score -= self.weights[i]
         
-        # 自分の色に合わせてスコアを返す
+        # from this AI's color's point of view
         return score if self.color == 1 else -score
 
     def get_move(self, board):
@@ -33,14 +33,14 @@ class WeightedAI:
             return None
 
         for r, c in valid_moves:
-            # 🌟 numpy.copy() ではなく、数字を保存するだけ（爆速）
+            # save the two integers instead of numpy.copy() (much faster)
             orig_black = board.black
             orig_white = board.white
             
             board.put_disc(r, c, self.color)
             score = self.evaluate(board)
             
-            # 🌟 代入して元に戻す（タイムトラベル完了）
+            # restore the board
             board.black = orig_black
             board.white = orig_white
             

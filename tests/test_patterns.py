@@ -49,7 +49,7 @@ def evaluate(w, P, O):
 
 
 def test_layout():
-    assert len(INSTANCES) == 84  # 対角線は4通り、ほかの10種類は8通り
+    assert len(INSTANCES) == 84  # 4 for the main diagonal, 8 for each of the other 10 patterns
     assert TABLE_SIZE == 167_265
     assert FAMILY_OFFSETS[-1] + FAMILY_SIZES[-1] == TABLE_SIZE
     for fam, squares in INSTANCES:
@@ -61,7 +61,7 @@ def test_stage_boundaries():
 
 
 def test_index_digits():
-    # 盤面が空なら全インスタンスの番号は 0、全部手番側なら Σ 3^k、全部相手なら 2 × Σ 3^k
+    # empty board: all 0; all player: sum of 3^k; all opponent: 2 * sum of 3^k
     assert indices(0, 0) == [0] * len(INSTANCES)
     full = 0xFFFFFFFFFFFFFFFF
     assert indices(full, 0) == [(3 ** len(sq) - 1) // 2 for _, sq in INSTANCES]
@@ -69,7 +69,7 @@ def test_index_digits():
 
 
 def test_instances_are_closed_under_symmetry():
-    """盤面を回転・反転すると、(パターン, 並びの番号) の多重集合がそのまま入れ替わるだけになる。"""
+    """Rotating/reflecting the board only permutes the multiset of (pattern, index) pairs."""
     rng = random.Random(0)
     for _ in range(50):
         P, O = random_position(rng, rng.randint(0, 55))

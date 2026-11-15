@@ -1,9 +1,9 @@
-// Rust 版エンジン（backend_rust を WebAssembly にしたもの）の薄いラッパー。
-// ブラウザの Web Worker と、Node での動作確認（scripts/smoke-test.mjs）の両方から使う。
-// 返す値の形は以前の Python 版 Web API（backend/web_api.py）と同じなので、画面側（app.ts）はそのまま使える。
+// Thin wrapper around the Rust engine (backend_rust compiled to WebAssembly).
+// Used both by the browser's web worker and by the Node check (scripts/smoke-test.mjs).
+// It returns values shaped like the former Python web API (backend/web_api.py), so app.ts works unchanged.
 import type { AiMoveResult, Analysis, ApiFunction, Color, GameState, Move, MoveScore, OpeningName } from "./protocol.js";
 
-/** Rust 側が公開している関数（backend_rust/src/wasm.rs） */
+/** Functions exported by Rust (backend_rust/src/wasm.rs) */
 interface Exports {
   memory: WebAssembly.Memory;
   alloc(len: number): number;
@@ -22,16 +22,16 @@ interface Exports {
 
 export interface EngineAssets {
   wasm: BufferSource;
-  /** パターン評価の重み（pattern_weights.bin）。なければ線形評価で読む */
+  /** Pattern weights (pattern_weights.bin); without them the linear evaluation is used */
   patterns?: ArrayBuffer;
-  /** 定石（opening_book.txt）。なければ定石なし */
+  /** Opening book (opening_book.txt); without it there is no book */
   book?: string;
 }
 
 const WIN_SCORE = 10_000;
 const START_BLACK = 0x0000000810000000n;
 const START_WHITE = 0x0000001008000000n;
-// wasm の i64 は符号つきで返ってくるので、64 ビットの符号なし整数に直す
+// wasm returns i64 values as signed, so convert them to unsigned 64-bit integers
 const u64 = (x: bigint) => BigInt.asUintN(64, x);
 
 function popcount(b: bigint): number {
@@ -43,7 +43,7 @@ function popcount(b: bigint): number {
   return n;
 }
 
-/** 立っているビットのマス番号（小さい順） */
+/** Indices of the set bits, in increasing order */
 function squares(b: bigint): number[] {
   const out: number[] = [];
   for (let i = 0; i < 64; i++) if ((b >> BigInt(i)) & 1n) out.push(i);
@@ -55,15 +55,15 @@ const toMove = (i: number): Move => [Math.floor(i / 8), i % 8];
 export class WasmEngine {
   private constructor(private readonly x: Exports) {}
 
-  /** `now` は時刻（ミリ秒）を返す関数（performance.now）。Rust 側が持ち時間の計算に使う */
+  /** `now` returns the time in milliseconds (performance.now); Rust uses it for the time limit */
   static async create(assets: EngineAssets, now: () => number): Promise<WasmEngine> {
     const { instance } = await WebAssembly.instantiate(assets.wasm, { env: { now_ms: now } });
     const engine = new WasmEngine(instance.exports as unknown as Exports);
     if (assets.patterns && engine.load(assets.patterns, (p, n) => engine.x.load_patterns(p, n)) !== 0) {
-      throw new Error("パターン評価の重みファイルを読み込めませんでした");
+      throw new Error("could not load the pattern weights");
     }
     if (assets.book && engine.load(new TextEncoder().encode(assets.book), (p, n) => engine.x.load_book(p, n)) !== 0) {
-      throw new Error("定石ファイルを読み込めませんでした");
+      throw new Error("could not load the opening book");
     }
     return engine;
   }
@@ -72,7 +72,7 @@ export class WasmEngine {
     return this.x.has_patterns() === 1;
   }
 
-  /** バイト列を wasm のメモリにコピーして `fn(位置, 長さ)` を呼ぶ */
+  /** Copy bytes into wasm memory and call `fn(address, length)` */
   private load(data: ArrayBuffer | Uint8Array, fn: (ptr: number, len: number) => number): number {
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
     const ptr = this.x.alloc(bytes.length);
@@ -114,7 +114,7 @@ export class WasmEngine {
     return this.state(BigInt(black), BigInt(white), color);
   }
 
-  /** color が (row, col) に打った後の盤面。手番は相手に移る */
+  /** Board after color plays (row, col); the opponent is to move next */
   play(black: string, white: string, color: Color, row: number, col: number): GameState | { error: string } {
     const [b, w] = [BigInt(black), BigInt(white)];
     const [p, o] = this.sides(b, w, color);
@@ -142,7 +142,7 @@ export class WasmEngine {
     };
   }
 
-  /** 手番側の全合法手の評価値（Lv.4 と同じ評価） */
+  /** Scores of every legal move of the side to move (same evaluation as Lv.4) */
   analyze(black: string, white: string, color: Color, depth: number): Analysis {
     const start = performance.now();
     const n = this.x.analyze(BigInt(black), BigInt(white), color, depth);
@@ -164,7 +164,7 @@ export class WasmEngine {
     return { moves, ms, nodes: r[0], depth };
   }
 
-  /** 棋譜（"f5d6c3..."、パスは含めない）に一致する定石名 */
+  /** Opening name matching a record ("f5d6c3...", no passes) */
   opening(transcript: string): OpeningName {
     const bytes = new TextEncoder().encode(transcript);
     const len = bytes.length ? this.load(bytes, (p, n) => this.x.opening(p, n)) : -1;
@@ -172,7 +172,7 @@ export class WasmEngine {
     return { name: new TextDecoder().decode(new Uint8Array(this.x.memory.buffer, this.x.text_ptr(), len)) };
   }
 
-  /** Worker からの呼び出しを振り分ける（引数は以前の Python 版 API と同じ並び） */
+  /** Dispatch calls from the worker (arguments in the same order as the former Python API) */
   call(fn: ApiFunction, args: (string | number)[]): unknown {
     const a = args as never[];
     switch (fn) {

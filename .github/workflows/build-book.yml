@@ -1,39 +1,39 @@
-# 序盤の定石（backend/opening_book.txt）を GitHub のサーバーで生成する。
+# Build the opening book (backend/opening_book.txt) on GitHub's servers.
 #
-# 数時間かかる計算なので手動で実行する:
-#   Actions タブ → Build opening book → Run workflow
-#   または gh workflow run build-book.yml --ref <ブランチ> -f depth=10 ...
+# Run manually, since it can take hours:
+#   Actions tab -> Build opening book -> Run workflow
+#   or: gh workflow run build-book.yml --ref <branch> -f depth=10 ...
 #
-# 1回のジョブは6時間までなので、--minutes で計算を打ち切り、途中結果をキャッシュに保存する。
-# 同じ設定でもう一度実行すると、保存した途中結果から続きを計算する。
-# 完成した定石ファイルは、実行結果ページの Artifacts からダウンロードできる。
+# A job may run for at most 6 hours, so the computation stops after --minutes and saves its partial results to the cache.
+# Running again with the same settings continues from the saved results.
+# The finished book can be downloaded from the run's Artifacts.
 name: Build opening book
 
 on:
   workflow_dispatch:
     inputs:
       depth:
-        description: 最善手を決める読みの深さ
+        description: search depth for book moves
         default: "10"
       full_plies:
-        description: すべての局面を登録する手数
+        description: include every position up to this ply
         default: "6"
       plies:
-        description: 定石を作る手数
+        description: build the book up to this ply
         default: "8"
       replies:
-        description: full_plies より先で考える相手の手の数
+        description: opponent replies to follow beyond full_plies
         default: "3"
       rank_depth:
-        description: 相手の手を選ぶときの読みの深さ
+        description: search depth for ranking opponent replies
         default: "4"
       engine:
-        description: 探索の実装（rust は python より約80倍速い。結果は同じ）
+        description: search implementation (rust is about 80x faster than python; same results)
         type: choice
         options: [rust, python]
         default: rust
       minutes:
-        description: 計算に使う最大の分数（ジョブ上限の6時間より短くする）
+        description: maximum minutes of computation (keep below the 6-hour job limit)
         default: "330"
 
 permissions:
@@ -44,14 +44,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     env:
-      # 入力値はシェルに直接埋め込まず、環境変数で渡す
+      # inputs are passed through environment variables, never interpolated into the shell
       DEPTH: ${{ inputs.depth }}
       FULL_PLIES: ${{ inputs.full_plies }}
       PLIES: ${{ inputs.plies }}
       REPLIES: ${{ inputs.replies }}
       RANK_DEPTH: ${{ inputs.rank_depth }}
       MINUTES: ${{ inputs.minutes }}
-      # 途中結果は設定ごとに分ける（Rust 版と Python 版は計算結果が同じなので共有する）
+      # partial results are separate per setting (Rust and Python give identical results, so they share)
       CACHE_KEY: book-d${{ inputs.depth }}-f${{ inputs.full_plies }}-p${{ inputs.plies }}-r${{ inputs.replies }}-k${{ inputs.rank_depth }}
     steps:
       - uses: actions/checkout@v4
@@ -60,23 +60,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Rust 版エンジンをビルド
+      - name: Build the Rust engine
         if: inputs.engine == 'rust'
         run: pip install ./backend_rust && python -c "import reversi_engine"
 
-      - name: 途中結果を復元
+      - name: Restore partial results
         uses: actions/cache/restore@v4
         with:
           path: backend/opening_book.txt.cache
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: ${{ env.CACHE_KEY }}-
 
-      - name: 定石を生成
+      - name: Build the opening book
         id: build
         working-directory: backend
         run: |
           before=$( [ -f opening_book.txt.cache ] && wc -l < opening_book.txt.cache || echo 0 )
-          echo "前回までに読んだ局面: $before"
+          echo "positions searched in earlier runs: $before"
           set +e
           timeout "${MINUTES}m" python -u build_book.py \
             --depth "$DEPTH" --full-plies "$FULL_PLIES" --plies "$PLIES" \
@@ -85,29 +85,29 @@ jobs:
           set -e
           after=$( [ -f opening_book.txt.cache ] && wc -l < opening_book.txt.cache || echo 0 )
           if [ "$status" -eq 0 ]; then
-            result="完成（$(grep -vc '^#' opening_book.txt) 局面）"
+            result="finished ($(grep -vc '^#' opening_book.txt) positions)"
           elif [ "$status" -eq 124 ]; then
-            result="時間切れで中断。もう一度同じ設定で実行すると続きから再開します"
+            result="stopped at the time limit; run again with the same settings to continue"
           else
-            echo "build_book.py が異常終了しました（終了コード $status）"
+            echo "build_book.py failed (exit code $status)"
             exit "$status"
           fi
           {
-            echo "## 定石の生成"
-            echo "- 設定: depth=$DEPTH full_plies=$FULL_PLIES plies=$PLIES replies=$REPLIES rank_depth=$RANK_DEPTH"
-            echo "- エンジン: $(python -c 'from strong_ai import StrongAI; print(StrongAI(1).engine)'), CPU $(nproc) コア"
-            echo "- この実行で読んだ局面: $((after - before))（累計 $after）"
-            echo "- 結果: $result"
+            echo "## Opening book build"
+            echo "- settings: depth=$DEPTH full_plies=$FULL_PLIES plies=$PLIES replies=$REPLIES rank_depth=$RANK_DEPTH"
+            echo "- engine: $(python -c 'from strong_ai import StrongAI; print(StrongAI(1).engine)'), $(nproc) CPU cores"
+            echo "- positions searched in this run: $((after - before)) (total $after)"
+            echo "- result: $result"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 途中結果を保存
+      - name: Save partial results
         if: always()
         uses: actions/cache/save@v4
         with:
           path: backend/opening_book.txt.cache
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
 
-      - name: 定石ファイルをアップロード
+      - name: Upload the opening book
         if: always()
         uses: actions/upload-artifact@v4
         with:

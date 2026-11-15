@@ -1,28 +1,28 @@
-//! 評価関数。`StrongAI.evaluate` / `StrongAI.final_score` と同じ値を返す。
+//! Linear evaluation; returns the same values as `StrongAI.evaluate` / `StrongAI.final_score`.
 //!
-//! Python 版とビット単位で同じ浮動小数点数になるよう、足し算の順番まで揃えている
-//! （浮動小数点の足し算は順番を変えると結果が変わることがあるため）。
+//! Even the order of additions matches the Python version, so the floats are bit-identical
+//! (floating-point addition is not associative).
 
 use crate::board::{legal_moves, neighbors};
 
-/// 特徴量の数（位置, 着手可能数, 石数, 開放度）
+/// Number of features (position, mobility, discs, frontier)
 pub const N_FEATURES: usize = 4;
-/// 係数の数（特徴量 × 序盤・中盤・終盤）
+/// Number of coefficients (features x opening/midgame/endgame)
 pub const N_COEFFS: usize = 3 * N_FEATURES;
-/// 終局の評価値の基準（`weights.WIN_SCORE`）
+/// Score base of a finished game (`weights.WIN_SCORE`)
 pub const WIN_SCORE: f64 = 10_000.0;
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     coeffs: [f64; N_COEFFS],
-    /// 行ごと（8ビット）の石の並び 256 通りに対する重みの合計
+    /// summed weights for each of the 256 disc patterns of every row
     row_tables: [[f64; 256]; 8],
-    /// マスごとの重み（手の並べ替えに使う）
+    /// per-square weights (used for move ordering)
     weights: [f64; 64],
 }
 
 impl Evaluator {
-    /// `coeffs` は 12 個、`weights` は 64 個。
+    /// `coeffs` must have 12 values and `weights` 64.
     pub fn new(coeffs: &[f64], weights: &[f64]) -> Result<Self, String> {
         let coeffs: [f64; N_COEFFS] = coeffs
             .try_into()
@@ -33,7 +33,7 @@ impl Evaluator {
         let mut row_tables = [[0.0; 256]; 8];
         for (row, table) in row_tables.iter_mut().enumerate() {
             for (pattern, value) in table.iter_mut().enumerate() {
-                // Python の sum() と同じく、列の小さい順に足す
+                // like Python, add column by column in increasing order
                 *value = (0..8)
                     .filter(|c| (pattern >> c) & 1 == 1)
                     .fold(0.0, |acc, c| acc + weights[row * 8 + c]);
@@ -46,13 +46,13 @@ impl Evaluator {
         })
     }
 
-    /// マス `x`（1ビット）の重み。
+    /// Weight of square `x` (a single bit).
     #[inline]
     pub fn weight(&self, x: u64) -> f64 {
         self.weights[x.trailing_zeros() as usize]
     }
 
-    /// 石の並び `b` の位置の重みの合計。
+    /// Summed positional weights of the discs `b`.
     #[inline]
     pub fn position(&self, b: u64) -> f64 {
         let t = &self.row_tables;
@@ -66,7 +66,7 @@ impl Evaluator {
             + t[7][((b >> 56) & 255) as usize]
     }
 
-    /// 手番側 `p` から見た評価値。`my_moves` は `legal_moves(p, o)`。
+    /// Evaluation for the player to move `p`; `my_moves` is `legal_moves(p, o)`.
     #[inline]
     pub fn evaluate(&self, p: u64, o: u64, my_moves: u64) -> f64 {
         let empty = !(p | o);
@@ -90,7 +90,7 @@ impl Evaluator {
     }
 }
 
-/// 終局時の評価（`p` から見て）。空きマスは勝った側に加える。
+/// Score of a finished game for `p`. Empty squares go to the winner.
 #[inline]
 pub fn final_score(p: u64, o: u64) -> f64 {
     let pc = p.count_ones() as i32;
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn final_score_gives_empties_to_winner() {
-        // P: 3石, O: 1石, 空き 60
+        // P: 3 discs, O: 1 disc, 60 empty
         assert_eq!(final_score(0b111, 1 << 63), WIN_SCORE + 2.0 + 60.0);
         assert_eq!(final_score(1 << 63, 0b111), -WIN_SCORE - 2.0 - 60.0);
         assert_eq!(final_score(1, 2), 0.0);

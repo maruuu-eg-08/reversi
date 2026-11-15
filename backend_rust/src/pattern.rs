@@ -1,20 +1,20 @@
-//! パターン評価。`backend/patterns.py` と同じ定義・同じ計算をする。
+//! Pattern evaluation. Same definitions and arithmetic as `backend/patterns.py`.
 //!
-//! 盤面のいくつかの「形」（パターン）について、石の並び（空き / 手番側 / 相手 の3通り）ごとに
-//! 点数の表を持ち、局面に現れた並びの点数を足し合わせて評価値にする。
-//! 点数はすべて整数（1/`SCALE` 石単位）なので、Python 版と完全に同じ値になる。
+//! For several board shapes (patterns) there is a score for every configuration of their squares
+//! (empty / player / opponent), and the evaluation is the sum over the configurations present.
+//! All scores are integers (1/`SCALE` of a disc), so the values match the Python version exactly.
 
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::OnceLock;
 
-/// 点数の単位。表の値 64 が石1個分
+/// Score unit: a table value of 64 is one disc
 pub const SCALE: i32 = 64;
-/// 段階の数。手数（60 - 空きマス）を4手ごとに区切る
+/// Number of stages: the move number (60 - empties) in steps of 4
 pub const N_STAGES: usize = 15;
 
-/// (名前, 基本の向きでのマス)。マスの順番が並びの番号の桁の順番になる
+/// (name, squares in the base orientation). The square order is the digit order of the index
 pub const FAMILIES: [(&str, &str); 11] = [
     ("hv2", "a2 b2 c2 d2 e2 f2 g2 h2"),
     ("hv3", "a3 b3 c3 d3 e3 f3 g3 h3"),
@@ -31,26 +31,26 @@ pub const FAMILIES: [(&str, &str); 11] = [
 
 const MAGIC: &[u8] = b"RVPAT\x01";
 
-/// 回転・反転したパターン1つ分（どのパターンか、どのマスをどの順で見るか）
+/// One rotated/reflected copy of a pattern (which pattern, which squares in which order)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instance {
     pub family: usize,
     pub squares: Vec<u8>,
 }
 
-/// インスタンスの最大数（評価のときに番号を並べる固定長の配列の大きさ）
+/// Maximum number of instances (size of the fixed array of indices used during evaluation)
 pub const MAX_INSTANCES: usize = 96;
 
-/// 定義から決まる表の大きさなどの情報
+/// Table sizes and other information derived from the definitions
 pub struct Layout {
     pub instances: Vec<Instance>,
     pub family_sizes: Vec<usize>,
     pub family_offsets: Vec<usize>,
     pub table_size: usize,
-    /// インスタンスごとの、表の中での開始位置（そのインスタンスのパターンの位置）
+    /// start of each instance's pattern table within a stage
     instance_offsets: Vec<u32>,
-    /// マスごとの (インスタンス番号, そのマスの桁の重み 3^k) の一覧を並べたもの。
-    /// マス s の分は `by_square[square_start[s]..square_start[s + 1]]`
+    /// (instance, digit weight 3^k) pairs for every square, concatenated;
+    /// square s uses `by_square[square_start[s]..square_start[s + 1]]`
     by_square: Vec<(u8, u32)>,
     square_start: [usize; 65],
 }
@@ -60,7 +60,7 @@ fn parse_square(name: &str) -> u8 {
     (b[1] - b'1') * 8 + (b[0] - b'a')
 }
 
-/// マス i を対称変換 s で移す（Python 版の `_map_square` と同じ）。
+/// Map square i by symmetry s (same as Python's `_map_square`).
 fn map_square(i: u8, s: u8) -> u8 {
     let (mut r, mut c) = (i / 8, i % 8);
     if s & 4 != 0 {
@@ -75,7 +75,7 @@ fn map_square(i: u8, s: u8) -> u8 {
     r * 8 + c
 }
 
-/// パターンの定義（Python 版と同じ順番でインスタンスを作る）。
+/// Pattern definitions (instances are generated in the same order as in Python).
 pub fn layout() -> &'static Layout {
     static LAYOUT: OnceLock<Layout> = OnceLock::new();
     LAYOUT.get_or_init(|| {
@@ -84,8 +84,8 @@ pub fn layout() -> &'static Layout {
         for (family, (_, squares)) in FAMILIES.iter().enumerate() {
             let base: Vec<u8> = squares.split_whitespace().map(parse_square).collect();
             family_sizes.push(3usize.pow(base.len() as u32));
-            // マスとその順番がまったく同じになるものだけを除く（Python 版と同じ）。
-            // 一覧が回転・反転について閉じるので、評価値は盤面の対称性を必ず保つ
+            // drop only exact duplicates (same squares in the same order), as in Python;
+            // the list is then closed under the symmetries, so the evaluation always respects them
             let mut seen: Vec<Vec<u8>> = Vec::new();
             for s in 0..8 {
                 let image: Vec<u8> = base.iter().map(|&i| map_square(i, s)).collect();
@@ -111,7 +111,7 @@ pub fn layout() -> &'static Layout {
             .iter()
             .map(|inst| family_offsets[inst.family] as u32)
             .collect();
-        // マスから「そのマスを含むインスタンスと桁」を引けるようにしておく（評価の高速化用）
+        // map each square to the instances and digits that contain it (to speed up evaluation)
         let mut by_square = Vec::new();
         let mut square_start = [0usize; 65];
         for sq in 0..64u8 {
@@ -136,13 +136,13 @@ pub fn layout() -> &'static Layout {
     })
 }
 
-/// 空きマスの数から段階を求める（0: 序盤 〜 N_STAGES-1: 終盤）。
+/// Stage for a number of empty squares (0: opening ... N_STAGES-1: endgame).
 #[inline]
 pub fn stage_of(n_empty: u32) -> usize {
     (60u32.saturating_sub(n_empty) / 4).min(N_STAGES as u32 - 1) as usize
 }
 
-/// 各インスタンスの並びの番号（Σ 桁 × 3^k、桁は 空き=0 / 手番側=1 / 相手=2）。
+/// Configuration index of every instance (sum of digit * 3^k; digit 0 empty / 1 player / 2 opponent).
 pub fn indices(p: u64, o: u64) -> Vec<u32> {
     layout()
         .instances
@@ -158,12 +158,12 @@ fn index_of(p: u64, o: u64, squares: &[u8]) -> u32 {
     })
 }
 
-/// 1段階分の点数
+/// Scores of one stage
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stage {
     pub bias: i32,
     pub mobility: i32,
-    /// 全パターンの表を並べたもの（`Layout::family_offsets` の位置から各パターンの表）
+    /// all pattern tables concatenated (each starts at `Layout::family_offsets`)
     pub table: Vec<i16>,
 }
 
@@ -173,7 +173,7 @@ pub struct PatternWeights {
 }
 
 impl PatternWeights {
-    /// すべて 0 の重み。
+    /// All-zero weights.
     pub fn zeros() -> Self {
         let size = layout().table_size;
         Self {
@@ -187,10 +187,10 @@ impl PatternWeights {
         }
     }
 
-    /// 手番側 `p` から見た評価値の整数部分（1/SCALE 石単位）。`my_moves` / `opp_moves` は両者の合法手。
+    /// Integer evaluation (1/SCALE of a disc) for the player to move `p`; `my_moves` / `opp_moves` are both sides' legal moves.
     ///
-    /// 石のあるマスだけを見て、そのマスを含むインスタンスの番号に桁の値を足していく
-    /// （`index_of` で全インスタンスの全マスを見るより速い。番号は同じになる）。
+    /// Visits only occupied squares and adds their digit to every instance containing the square
+    /// (faster than scanning every square of every instance with `index_of`; the indices are the same).
     #[inline]
     pub fn evaluate_raw(&self, p: u64, o: u64, my_moves: u64, opp_moves: u64) -> i32 {
         let lay = layout();
@@ -213,13 +213,13 @@ impl PatternWeights {
         total
     }
 
-    /// 手番側 `p` から見た評価値（石数の単位）。
+    /// Evaluation in discs for the player to move `p`.
     #[inline]
     pub fn evaluate(&self, p: u64, o: u64, my_moves: u64, opp_moves: u64) -> f64 {
         f64::from(self.evaluate_raw(p, o, my_moves, opp_moves)) / f64::from(SCALE)
     }
 
-    /// Python 版と同じ形式（リトルエンディアン）で保存する。
+    /// Save in the same (little-endian) format as the Python version.
     pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let lay = layout();
         let mut out = Vec::with_capacity(16 + N_STAGES * (8 + 2 * lay.table_size));
@@ -254,7 +254,7 @@ impl PatternWeights {
         let lay = layout();
         let mut r = Reader { data, pos: 0 };
         if r.take(MAGIC.len())? != MAGIC {
-            return Err("パターンの重みファイルではありません".into());
+            return Err("not a pattern weights file".into());
         }
         let n_stages = r.u16()? as usize;
         let n_families = r.u16()? as usize;
@@ -262,7 +262,7 @@ impl PatternWeights {
             .map(|_| r.u32().map(|v| v as usize))
             .collect::<Result<_, _>>()?;
         if n_stages != N_STAGES || sizes != lay.family_sizes {
-            return Err("パターンの定義がこのプログラムと違います".into());
+            return Err("pattern definitions do not match this program".into());
         }
         let mut stages = Vec::with_capacity(N_STAGES);
         for _ in 0..N_STAGES {
@@ -280,7 +280,7 @@ impl PatternWeights {
             });
         }
         if r.pos != data.len() {
-            return Err("ファイルの大きさが正しくありません".into());
+            return Err("unexpected file size".into());
         }
         Ok(Self { stages })
     }
@@ -297,7 +297,7 @@ impl<'a> Reader<'a> {
             .pos
             .checked_add(n)
             .filter(|&e| e <= self.data.len())
-            .ok_or("ファイルが途中で切れています")?;
+            .ok_or("truncated file")?;
         let s = &self.data[self.pos..end];
         self.pos = end;
         Ok(s)
@@ -321,9 +321,9 @@ mod tests {
     #[test]
     fn layout_has_expected_sizes() {
         let lay = layout();
-        assert_eq!(lay.instances.len(), 84); // 対角線（diag8）は4通り、ほかは8通り
+        assert_eq!(lay.instances.len(), 84); // 4 for the main diagonal (diag8), 8 for the others
         assert_eq!(lay.table_size, 167_265);
-        // 各インスタンスのマスは重複しない
+        // no instance repeats a square
         for inst in &lay.instances {
             let mut s = inst.squares.clone();
             s.sort();
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn fast_evaluation_matches_simple_index_computation() {
-        // 速い方法（石のあるマスから足す）と、素直な方法（index_of）で同じ評価値になる
+        // the fast method (adding from occupied squares) and the simple one (index_of) give the same evaluation
         let lay = layout();
         let mut w = PatternWeights::zeros();
         let mut r = crate::selfplay::Rng::new(9);
@@ -373,15 +373,15 @@ mod tests {
 
     #[test]
     fn index_encodes_each_square_in_base3() {
-        // corner3x3 の最初のインスタンス（a1 b1 c1 a2 b2 c2 a3 b3 c3）
+        // first corner3x3 instance (a1 b1 c1 a2 b2 c2 a3 b3 c3)
         let inst = &layout()
             .instances
             .iter()
             .find(|i| FAMILIES[i.family].0 == "corner3x3")
             .unwrap()
             .squares;
-        let p = 1u64 << inst[0]; // 1桁目 = 手番側 → 1
-        let o = 1u64 << inst[1]; // 2桁目 = 相手 → 2*3
+        let p = 1u64 << inst[0]; // 1st digit = player -> 1
+        let o = 1u64 << inst[1]; // 2nd digit = opponent -> 2*3
         assert_eq!(index_of(p, o, inst), 1 + 2 * 3);
     }
 
@@ -407,9 +407,9 @@ mod tests {
         w.stages[0].bias = 10;
         w.stages[0].mobility = 3;
         let (mp, mo) = (legal_moves(p, o), legal_moves(o, p));
-        // 開始局面は互いに4手ずつなので着手可能数の差は 0
+        // both sides have 4 moves at the start, so the mobility difference is 0
         assert_eq!(w.evaluate_raw(p, o, mp, mo), 10);
-        // ある並びに点数を入れると、その並びになっているインスタンスの数だけ足される
+        // a score in the table is added once for every instance in that configuration
         let lay = layout();
         let diag = lay
             .instances

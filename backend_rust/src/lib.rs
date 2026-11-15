@@ -1,8 +1,8 @@
-//! リバーシ Lv.5 エンジンの Rust 実装。
+//! Rust implementation of the reversi Lv.5 engine.
 //!
-//! `backend/strong_ai.py` の盤面計算・評価・探索のうち、計算の重い部分だけを移植したもの。
-//! 固定の深さで読めば Python 版と同じ結果になり、速さだけが違う。
-//! Python からは `import reversi_engine` で使う（`python` フィーチャー、maturin でビルド）。
+//! A port of the computationally heavy parts of `backend/strong_ai.py` (board, evaluation, search).
+//! At a fixed depth it returns the same results as the Python version; only the speed differs.
+//! Used from Python as `import reversi_engine` (the `python` feature, built with maturin).
 
 pub mod board;
 pub mod book;
@@ -18,7 +18,7 @@ pub mod train;
 pub mod wasm;
 
 #[cfg(feature = "python")]
-// PyO3 0.22 のマクロが展開するコードに clippy::useless_conversion が誤って反応するため
+// PyO3 0.22's macro-generated code triggers a false clippy::useless_conversion
 #[allow(clippy::useless_conversion)]
 mod python {
     use pyo3::exceptions::PyValueError;
@@ -26,19 +26,19 @@ mod python {
 
     use crate::eval::Evaluator;
 
-    /// 手番側 p が打てるマス。
+    /// Squares where the player to move p can play.
     #[pyfunction]
     fn legal_moves(p: u64, o: u64) -> u64 {
         crate::board::legal_moves(p, o)
     }
 
-    /// p が x（1ビット）に打ったときに裏返る石。
+    /// Discs flipped when p plays on x (a single bit).
     #[pyfunction]
     fn flips(p: u64, o: u64, x: u64) -> u64 {
         crate::board::flips(p, o, x)
     }
 
-    /// 評価関数の係数と重み表を持つ探索器。置換表は探索のたびに作り直す。
+    /// Searcher holding the evaluation coefficients and weights. The transposition table is reset for every search.
     #[pyclass]
     struct Searcher {
         inner: crate::search::Searcher,
@@ -46,7 +46,7 @@ mod python {
 
     #[pymethods]
     impl Searcher {
-        /// pattern_path を渡すと、葉の評価にそのファイルのパターン評価を使う（同じファイルは1回だけ読み込む）。
+        /// With pattern_path, the leaves use that file's pattern evaluation (each file is loaded only once).
         #[new]
         #[pyo3(signature = (coeffs, weights, pattern_path=None))]
         fn new(coeffs: Vec<f64>, weights: Vec<f64>, pattern_path: Option<&str>) -> PyResult<Self> {
@@ -58,8 +58,8 @@ mod python {
             Ok(Self { inner })
         }
 
-        /// 反復深化で読み、(最善手, 評価値, 読んだ深さ, 探索局面数, 終局まで読み切ったか) を返す。
-        /// time_limit に float("inf") を渡すと時間制限なし。探索中は GIL を手放す。
+        /// Iterative deepening; returns (best move, score, depth, nodes, solved to the end?).
+        /// Pass float("inf") as time_limit for no limit. Releases the GIL while searching.
         fn search(
             &mut self,
             py: Python<'_>,
@@ -72,24 +72,24 @@ mod python {
             (r.best_move, r.score, r.depth, r.nodes, r.solved)
         }
 
-        /// 全合法手を depth 手先まで読んだ評価値を、良い順に [(手, 評価値)] で返す。
+        /// Score every legal move at `depth` and return [(move, score)], best first.
         fn score_moves(&mut self, py: Python<'_>, p: u64, o: u64, depth: u32) -> Vec<(u64, f64)> {
             py.allow_threads(|| self.inner.score_moves(p, o, depth))
         }
 
-        /// 直前の探索（search / score_moves）で探索した局面数。
+        /// Nodes searched by the last search (search / score_moves).
         #[getter]
         fn nodes(&self) -> u64 {
             self.inner.nodes()
         }
 
-        /// 手番側 p から見た評価値（深さ0）。
+        /// Evaluation (depth 0) for the player to move p.
         fn evaluate(&self, p: u64, o: u64) -> f64 {
             self.inner.evaluate(p, o, crate::board::legal_moves(p, o))
         }
     }
 
-    /// パターン評価の重みファイルを読み込む。同じパスは2回目以降は読み込み済みのものを使う。
+    /// Load a pattern-weights file; later calls with the same path reuse the loaded weights.
     fn load_patterns(path: &str) -> PyResult<std::sync::Arc<crate::pattern::PatternWeights>> {
         use std::collections::HashMap;
         use std::sync::{Arc, Mutex, OnceLock};
@@ -107,13 +107,13 @@ mod python {
         Ok(w)
     }
 
-    /// 各パターンのインスタンスの並びの番号（テスト用。Python 版の patterns.indices と同じ）。
+    /// Configuration index of every pattern instance (for tests; same as Python's patterns.indices).
     #[pyfunction]
     fn pattern_indices(p: u64, o: u64) -> Vec<u32> {
         crate::pattern::indices(p, o)
     }
 
-    /// パターン評価（重みファイルを読み込んで使う）。
+    /// Pattern evaluation backed by a weights file.
     #[pyclass]
     struct PatternEval {
         weights: crate::pattern::PatternWeights,
@@ -128,7 +128,7 @@ mod python {
             Ok(Self { weights })
         }
 
-        /// 手番側 p から見た評価値（石数の単位）。
+        /// Evaluation in discs for the player to move p.
         fn evaluate(&self, p: u64, o: u64) -> f64 {
             let (mp, mo) = (
                 crate::board::legal_moves(p, o),
@@ -138,8 +138,8 @@ mod python {
         }
     }
 
-    /// 自己対戦で学習データを作る。ゲーム番号 first〜first+count-1 の全局面を、
-    /// 1局面 RECORD_SIZE バイトのレコードを並べた bytes で返す（ゲーム番号の順）。探索中は GIL を手放す。
+    /// Generate training data by self-play: all positions of games first..first+count-1 as bytes of
+    /// RECORD_SIZE-byte records (in game order). Releases the GIL while searching.
     #[pyfunction]
     #[allow(clippy::too_many_arguments)]
     fn generate_games<'py>(
@@ -157,7 +157,7 @@ mod python {
     ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
         if random_min > random_max {
             return Err(PyValueError::new_err(
-                "random_min は random_max 以下にしてください",
+                "random_min must not exceed random_max",
             ));
         }
         let eval = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
@@ -175,8 +175,8 @@ mod python {
         Ok(pyo3::types::PyBytes::new_bound(py, &bytes))
     }
 
-    /// 自己対戦データからパターン評価の重みを学習し、out_path に保存する。
-    /// 段階ごとの結果を辞書のリストで返す。進み具合は標準エラーに表示する。探索中は GIL を手放す。
+    /// Train pattern-evaluation weights from self-play data and save them to out_path.
+    /// Returns per-stage results as a list of dicts; progress goes to stderr. Releases the GIL while working.
     #[pyfunction]
     #[allow(clippy::too_many_arguments)]
     fn train_patterns(
@@ -192,7 +192,7 @@ mod python {
         weights: Vec<f64>,
     ) -> PyResult<Vec<std::collections::HashMap<&'static str, f64>>> {
         if valid_mod == 0 {
-            return Err(PyValueError::new_err("valid_mod は 1 以上にしてください"));
+            return Err(PyValueError::new_err("valid_mod must be at least 1"));
         }
         let linear = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
         let records = crate::selfplay::read_data_file(std::path::Path::new(data_path))
@@ -208,7 +208,7 @@ mod python {
             let start = std::time::Instant::now();
             crate::train::train(&records, &cfg, &linear, &mut |r| {
                 eprintln!(
-                    "stage {:2}: 学習 {:>8} / 検証 {:>7} 局面, {:3} 回反復, 検証 RMSE {:.2}（線形評価 {:.2}） ({:.0}s)",
+                    "stage {:2}: train {:>8} / valid {:>7} positions, {:3} iterations, valid RMSE {:.2} (linear {:.2}) ({:.0}s)",
                     r.stage, r.n_train, r.n_valid, r.iterations, r.valid_rmse, r.linear_rmse,
                     start.elapsed().as_secs_f64()
                 );
@@ -235,9 +235,9 @@ mod python {
             .collect())
     }
 
-    // ---------- Web版用に移植した部分（Python 版との一致テスト用） ----------
+    // ---------- parts ported for the web version (for equality tests with Python) ----------
 
-    /// Rust 側に埋め込んだ評価パラメータ（weights.py と一致するかのテスト用）
+    /// Evaluation parameters embedded in Rust (to test that they match weights.py)
     #[pyfunction]
     fn params() -> std::collections::HashMap<&'static str, Vec<f64>> {
         use crate::levels::params::*;
@@ -253,19 +253,19 @@ mod python {
         ])
     }
 
-    /// Lv.2 の最高点の手の一覧
+    /// Best moves of Lv.2
     #[pyfunction]
     fn weighted_best_moves(black: u64, white: u64, color: i8) -> Vec<u64> {
         crate::levels::weighted_best_moves(black, white, color)
     }
 
-    /// Lv.3 の最高点の手の一覧
+    /// Best moves of Lv.3
     #[pyfunction]
     fn minimax_best_moves(black: u64, white: u64, color: i8, depth: i32) -> Vec<u64> {
         crate::levels::minimax_best_moves(black, white, color, depth)
     }
 
-    /// Lv.4 の最善手と探索局面数
+    /// Best move and node count of Lv.4
     #[pyfunction]
     fn alphabeta_move(black: u64, white: u64, color: i8, depth: i32) -> (u64, u64) {
         let mut ab = crate::levels::AlphaBeta::new(color, depth);
@@ -273,7 +273,7 @@ mod python {
         (m, ab.nodes)
     }
 
-    /// Lv.4 の全手の評価値（良い順）と探索局面数
+    /// Scores of every move for Lv.4 (best first) and the node count
     #[pyfunction]
     fn alphabeta_analyze(black: u64, white: u64, color: i8, depth: i32) -> (Vec<(u64, f64)>, u64) {
         let mut ab = crate::levels::AlphaBeta::new(color, depth);
@@ -281,13 +281,13 @@ mod python {
         (r, ab.nodes)
     }
 
-    /// 定石名（openings.identify と同じ）
+    /// Opening name (same as openings.identify)
     #[pyfunction]
     fn opening_name(transcript: &str) -> Option<String> {
         crate::openings::identify(transcript)
     }
 
-    /// 定石の表（opening_book.OpeningBook と同じ検索）
+    /// Opening book (same lookup as opening_book.OpeningBook)
     #[pyclass]
     struct Book {
         inner: crate::book::OpeningBook,
@@ -306,7 +306,7 @@ mod python {
             self.inner.len()
         }
 
-        /// (手, 評価値, 深さ) または None
+        /// (move, score, depth) or None
         fn probe(&self, p: u64, o: u64) -> Option<(u64, f64, u32)> {
             self.inner
                 .probe(p, o)

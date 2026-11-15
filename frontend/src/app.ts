@@ -23,28 +23,28 @@ const COPY_HINT = copyStatus.textContent?.trim() ?? "";
 const analysisList = $<HTMLOListElement>("analysis-list");
 
 const COLS = "abcdefgh";
-const colorName = (c: Color) => (c === 1 ? "黒" : "白");
+const colorName = (c: Color) => (c === 1 ? "Black" : "White");
 const notation = (row: number, col: number) => `${COLS[col]}${row + 1}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const AI_TIME_LIMIT = 1.0; // Lv.5 が1手に使う時間（秒）
+const AI_TIME_LIMIT = 1.0; // seconds per move for Lv.5
 
-// ---------- 状態 ----------
+// ---------- state ----------
 let state: GameState | null = null;
 let humanColor: Color = 1;
-let gameId = 0; // 新しい対局を始めたら古い非同期処理の結果を捨てるための番号
+let gameId = 0; // bumped on every new game so stale async results are discarded
 let busy = false;
 let lastMove: Move | null = null;
 let analysis: Analysis | null = null;
 
-// 棋譜（パスも含めた手順）
+// game record (moves including passes)
 interface Ply {
   color: Color;
-  move: Move | null; // null はパス
+  move: Move | null; // null means a pass
 }
 let plies: Ply[] = [];
 let renderedPlies = -1;
 
-// 「待った」用: あなたの番になった局面を順に保存しておく
+// for undo: every position where it became your turn, in order
 interface Snapshot {
   state: GameState;
   lastMove: Move | null;
@@ -54,7 +54,7 @@ let snapshots: Snapshot[] = [];
 
 const engine = new Engine((message) => (loadingText.textContent = message));
 
-// ---------- 表示設定（ブラウザに保存。保存できない環境でも動くようにする） ----------
+// ---------- display settings (saved in the browser; works without storage too) ----------
 const PREFS_KEY = "reversi-prefs";
 function loadPrefs() {
   try {
@@ -62,7 +62,7 @@ function loadPrefs() {
     if (typeof p.showEval === "boolean") showEvalInput.checked = p.showEval;
     if (typeof p.showAnalysis === "boolean") showAnalysisInput.checked = p.showAnalysis;
   } catch {
-    // 既定値のまま
+    // keep the defaults
   }
 }
 function savePrefs() {
@@ -72,15 +72,15 @@ function savePrefs() {
       JSON.stringify({ showEval: showEvalInput.checked, showAnalysis: showAnalysisInput.checked }),
     );
   } catch {
-    // 保存できなくても表示は切り替わる
+    // the display still toggles even if saving fails
   }
 }
 loadPrefs();
 
-// 盤面の数字か読み筋リストのどちらかを表示するなら、分析が必要
+// analysis is needed if either the board scores or the analysis list is shown
 const wantAnalysis = () => showEvalInput.checked || showAnalysisInput.checked;
 
-// ---------- 盤面の生成 ----------
+// ---------- board ----------
 const cells: HTMLButtonElement[] = [];
 for (let row = 0; row < 8; row++) {
   for (let col = 0; col < 8; col++) {
@@ -99,7 +99,7 @@ function bitAt(bits: string, index: number): boolean {
   return ((BigInt(bits) >> BigInt(index)) & 1n) === 1n;
 }
 
-// 評価値を色（良い=緑, 悪い=赤）に変換する。同じ評価値は同じ色になるよう、異なる値の順位で決める
+// Map a score to a color (green = good, red = bad), by rank among distinct scores so equal scores share a color
 function heatColor(score: number, distinct: number[]): string {
   const idx = distinct.indexOf(score);
   const t = distinct.length <= 1 ? 1 : 1 - idx / (distinct.length - 1);
@@ -108,13 +108,13 @@ function heatColor(score: number, distinct: number[]): string {
 }
 
 function scoreLabel(m: MoveScore): string {
-  if (m.outcome === "win") return `勝+${m.discDiff}`;
-  if (m.outcome === "loss") return `負${m.discDiff}`;
+  if (m.outcome === "win") return `W+${m.discDiff}`;
+  if (m.outcome === "loss") return `L${m.discDiff}`;
   const v = Math.round(m.score);
   return v > 0 ? `+${v}` : String(v);
 }
 
-// ---------- 描画 ----------
+// ---------- rendering ----------
 function render(animate = false) {
   if (!state) return;
   const s = state;
@@ -125,7 +125,7 @@ function render(animate = false) {
   let distinct: number[] = [];
   if (analysis && showEvalInput.checked && humanTurn) {
     analysis.moves.forEach((m) => scores.set(m.row * 8 + m.col, m));
-    distinct = [...new Set(analysis.moves.map((m) => m.score))]; // 降順に並んでいる
+    distinct = [...new Set(analysis.moves.map((m) => m.score))]; // already sorted in descending order
   }
 
   cells.forEach((cell, i) => {
@@ -148,7 +148,7 @@ function render(animate = false) {
       if (animate && flipped.has(i)) stone.classList.add("flip");
       if (animate && isLast) stone.classList.add("placed");
       cell.appendChild(stone);
-      label += isBlack ? " 黒" : " 白";
+      label += isBlack ? " black" : " white";
     } else if (canPlay) {
       const m = scores.get(i);
       if (m) {
@@ -157,12 +157,12 @@ function render(animate = false) {
         ev.style.background = heatColor(m.score, distinct);
         ev.textContent = scoreLabel(m);
         cell.appendChild(ev);
-        label += ` 打てる 評価 ${scoreLabel(m)}`;
+        label += ` legal, score ${scoreLabel(m)}`;
       } else {
         const dot = document.createElement("span");
         dot.className = "hint-dot";
         cell.appendChild(dot);
-        label += " 打てる";
+        label += " legal";
       }
     }
     cell.setAttribute("aria-label", label);
@@ -170,8 +170,8 @@ function render(animate = false) {
 
   $("count-black").textContent = String(s.blackCount);
   $("count-white").textContent = String(s.whiteCount);
-  $("who-black").textContent = humanColor === 1 ? "(あなた)" : "(AI)";
-  $("who-white").textContent = humanColor === -1 ? "(あなた)" : "(AI)";
+  $("who-black").textContent = humanColor === 1 ? "(you)" : "(AI)";
+  $("who-white").textContent = humanColor === -1 ? "(you)" : "(AI)";
   const over = s.legal.length === 0 && !s.opponentHasMove;
   $("player-black").classList.toggle("active", !over && s.color === 1);
   $("player-white").classList.toggle("active", !over && s.color === -1);
@@ -179,7 +179,7 @@ function render(animate = false) {
   renderAnalysisList();
   renderRecord();
   undoBtn.disabled = !canUndo();
-  undoBtn.title = undoBtn.disabled ? "戻せる手がまだありません" : "直前のあなたの番に戻します（⌘Z / Ctrl+Z）";
+  undoBtn.title = undoBtn.disabled ? "Nothing to undo yet" : "Go back to your previous turn (⌘Z / Ctrl+Z)";
 }
 
 function renderRecord() {
@@ -189,12 +189,12 @@ function renderRecord() {
   void updateOpeningName();
   recordEl.replaceChildren();
   const moves = plies.filter((p) => p.move).length;
-  recordCount.textContent = moves ? `${moves} 手` : "";
+  recordCount.textContent = moves ? `${moves} ${moves === 1 ? "move" : "moves"}` : "";
   copyBtn.disabled = moves === 0;
   if (plies.length === 0) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = "まだ手が打たれていません";
+    li.textContent = "No moves yet";
     recordEl.appendChild(li);
     return;
   }
@@ -210,11 +210,11 @@ function renderRecord() {
       n++;
       num.textContent = String(n);
       text.textContent = notation(p.move[0], p.move[1]);
-      li.setAttribute("aria-label", `${n}手目 ${colorName(p.color)} ${text.textContent}`);
+      li.setAttribute("aria-label", `move ${n} ${colorName(p.color)} ${text.textContent}`);
     } else {
       li.classList.add("pass");
-      text.textContent = "パス";
-      li.setAttribute("aria-label", `${colorName(p.color)} パス`);
+      text.textContent = "pass";
+      li.setAttribute("aria-label", `${colorName(p.color)} passes`);
     }
     if (i === plies.length - 1) li.classList.add("latest");
     li.append(num, disc, text);
@@ -223,14 +223,14 @@ function renderRecord() {
   if (grew) recordEl.scrollTop = recordEl.scrollHeight;
 }
 
-// 棋譜から定石名を調べる。名前の付いた定石は最長でも20手程度なので、それ以降は問い合わせない
+// Look up the opening name. Named openings are at most about 20 moves long, so stop asking after that
 const OPENING_MAX_MOVES = 24;
 let openingName: string | null = null;
 async function updateOpeningName() {
   const transcript = recordText();
-  if (transcript.length / 2 > OPENING_MAX_MOVES) return; // 定石を外れた後も最後の名前を表示し続ける
+  if (transcript.length / 2 > OPENING_MAX_MOVES) return; // keep showing the last name after leaving the book
   const name = transcript ? (await engine.opening(transcript)).name : null;
-  if (recordText() !== transcript) return; // 問い合わせ中に手が進んだ・戻った
+  if (recordText() !== transcript) return; // the game moved on or back while we were asking
   openingName = name;
   openingNameEl.textContent = openingName ?? "–";
 }
@@ -253,11 +253,11 @@ function renderAnalysisList() {
   };
   if (!showAnalysisInput.checked) return;
   if (!state || state.color !== humanColor || busy) {
-    li("あなたの番になると表示します", "empty");
+    li("Shown on your turn", "empty");
     return;
   }
   if (!analysis) {
-    li("分析中…", "empty");
+    li("Analyzing…", "empty");
     return;
   }
   const top = analysis.moves[0]?.score;
@@ -269,14 +269,14 @@ function renderAnalysisList() {
     score.textContent = scoreLabel(m);
     el.append(name, score);
   });
-  li(`深さ ${analysis.depth} · ${analysis.nodes.toLocaleString()} 局面 · ${analysis.ms} ms`, "empty");
+  li(`depth ${analysis.depth} · ${analysis.nodes.toLocaleString()} positions · ${analysis.ms} ms`, "empty");
 }
 
 function setStatus(text: string) {
   statusEl.textContent = text;
 }
 
-// ---------- 対局の進行 ----------
+// ---------- game flow ----------
 async function startGame() {
   const id = ++gameId;
   humanColor = Number(
@@ -306,7 +306,7 @@ async function advance(id: number) {
         finishGame(s);
         return;
       }
-      setStatus(`${colorName(s.color)}は打てる場所がないのでパスします`);
+      setStatus(`${colorName(s.color)} has no legal move and passes`);
       await sleep(900);
       const next = await engine.getState(s, (-s.color) as Color);
       if (id !== gameId) return;
@@ -318,7 +318,7 @@ async function advance(id: number) {
 
     if (s.color !== humanColor) {
       busy = true;
-      setStatus("AI が考え中…");
+      setStatus("AI is thinking…");
       render();
       const level = levelSel.value;
       const depth = Number(depthInput.value);
@@ -326,18 +326,18 @@ async function advance(id: number) {
       if (id !== gameId) return;
       $("stat-ms").textContent = `${res.ms.toLocaleString()} ms`;
       $("stat-nodes").textContent = res.book
-        ? "–（定石）"
+        ? "– (book)"
         : res.nodes === null
-          ? "–（探索なし）"
+          ? "– (no search)"
           : res.nodes.toLocaleString();
       $("stat-depth").textContent = res.book
-        ? `定石の手（事前に ${res.depth} 手先まで解析済み）`
+        ? `Book move (precomputed ${res.depth} plies deep)`
         : res.solved
-          ? `終局まで読み切り（${res.depth} 手先）`
+          ? `Solved to the end (${res.depth} plies)`
           : res.depth
-            ? `${res.depth} 手先まで`
+            ? `${res.depth} plies deep`
             : "–";
-      if (!res.move) throw new Error("AI が手を返しませんでした");
+      if (!res.move) throw new Error("the AI returned no move");
       const next = await engine.play(s, res.move[0], res.move[1]);
       if (id !== gameId) return;
       plies.push({ color: s.color, move: res.move });
@@ -349,11 +349,11 @@ async function advance(id: number) {
       continue;
     }
 
-    // 人間の番（待ったで戻れるよう局面を保存）
+    // your turn (save the position so undo can return to it)
     if (snapshots[snapshots.length - 1]?.state !== s) {
       snapshots.push({ state: s, lastMove, plies: plies.length });
     }
-    setStatus(`あなた（${colorName(humanColor)}）の番です`);
+    setStatus(`Your turn (${colorName(humanColor)})`);
     analysis = null;
     render();
     if (wantAnalysis()) void requestAnalysis(id);
@@ -388,9 +388,9 @@ async function onCellClick(row: number, col: number) {
   await advance(id);
 }
 
-// ---------- 待った ----------
-// 直前の「あなたの番」に戻す（AI の応手とあなたの手をまとめて取り消す）。
-// AI の思考中に押した場合は、考え中の手を捨てて、あなたが打つ前に戻す。
+// ---------- undo ----------
+// Go back to your previous turn (undoing both your move and the AI's reply).
+// Pressed while the AI is thinking, it discards that search and returns to before your move.
 function canUndo(): boolean {
   if (!state || snapshots.length === 0) return false;
   return snapshots[snapshots.length - 1].state !== state || snapshots.length >= 2;
@@ -400,7 +400,7 @@ async function undo() {
   if (!canUndo()) return;
   if (snapshots[snapshots.length - 1].state === state) snapshots.pop();
   const target = snapshots[snapshots.length - 1];
-  const id = ++gameId; // 進行中の AI の思考や分析の結果は捨てる
+  const id = ++gameId; // discard any AI search or analysis still in progress
   state = target.state;
   lastMove = target.lastMove;
   plies = plies.slice(0, target.plies);
@@ -413,12 +413,12 @@ async function undo() {
 function finishGame(s: GameState) {
   const diff = s.blackCount - s.whiteCount;
   const humanDiff = diff * humanColor;
-  const result = humanDiff > 0 ? "あなたの勝ち！" : humanDiff < 0 ? "AI の勝ち" : "引き分け";
-  setStatus(`終局 — 黒 ${s.blackCount} : ${s.whiteCount} 白 · ${result}`);
+  const result = humanDiff > 0 ? "You win!" : humanDiff < 0 ? "The AI wins" : "Draw";
+  setStatus(`Game over — Black ${s.blackCount} : ${s.whiteCount} White · ${result}`);
   render();
 }
 
-// Clipboard API が使えない環境（権限がない・古いブラウザ）では execCommand で代用する
+// Without the Clipboard API (no permission or an old browser), fall back to execCommand
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -443,7 +443,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-// ---------- イベント ----------
+// ---------- events ----------
 newGameBtn.addEventListener("click", () => void startGame());
 document.querySelectorAll('input[name="human-color"]').forEach((el) =>
   el.addEventListener("change", () => void startGame()),
@@ -469,19 +469,19 @@ undoBtn.addEventListener("click", () => void undo());
 copyBtn.addEventListener("click", async () => {
   const text = recordText();
   if (await copyToClipboard(text)) {
-    copyStatus.textContent = `コピーしました（${text.length / 2} 手）`;
+    copyStatus.textContent = `Copied (${text.length / 2} moves)`;
   } else {
-    copyStatus.textContent = `コピーできませんでした。手順: ${text}`;
+    copyStatus.textContent = `Could not copy. Moves: ${text}`;
   }
 });
-// ⌘Z / Ctrl+Z で待った
+// ⌘Z / Ctrl+Z to undo
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
     e.preventDefault();
     void undo();
   }
 });
-// E キーで盤面の評価値を切り替える（入力欄の操作中は除く）
+// E toggles the board scores (except while typing in an input)
 document.addEventListener("keydown", (e) => {
   if (e.key !== "e" && e.key !== "E") return;
   if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
@@ -491,7 +491,7 @@ document.addEventListener("keydown", (e) => {
   onDisplayToggle();
 });
 
-// ---------- 起動 ----------
+// ---------- startup ----------
 engine.ready
   .then(async (version) => {
     $("runtime").textContent = version;
@@ -500,6 +500,6 @@ engine.ready
     await startGame();
   })
   .catch((e: unknown) => {
-    loadingText.textContent = `読み込みに失敗しました: ${e instanceof Error ? e.message : String(e)}`;
-    setStatus("エンジンを読み込めませんでした。ページを再読み込みしてください。");
+    loadingText.textContent = `Failed to load: ${e instanceof Error ? e.message : String(e)}`;
+    setStatus("Could not load the engine. Please reload the page.");
   });

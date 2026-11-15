@@ -5,13 +5,13 @@ class AlphaBetaAI:
     def __init__(self, color, max_depth=6, weights=None, eval_coeffs=None):
         self.color = color
         self.depth = max_depth
-        # 学習した係数は POSITION_WEIGHTS を前提にしているので、両方を weights.py から揃えて使う
+        # the learned coefficients assume POSITION_WEIGHTS, so both come from weights.py
         self.weights = list(weights) if weights is not None else POSITION_WEIGHTS
-        # [序盤Pos, 序盤Mob, 序盤Disc, 中盤Pos, 中盤Mob, 中盤Disc, 終盤Pos, 終盤Mob, 終盤Disc]
+        # [opening pos, mob, disc, midgame pos, mob, disc, endgame pos, mob, disc]
         self.eval_coeffs = list(eval_coeffs) if eval_coeffs is not None else EVAL_COEFFS
 
-        self.tt = {}  # 置換表
-        self.nodes = 0  # 直前の探索で訪れた局面数（Web版の表示用）
+        self.tt = {}  # transposition table
+        self.nodes = 0  # nodes visited by the last search (shown in the web version)
         self.opening_book = {}
 
     def _calc_weight_score(self, bitboard):
@@ -24,7 +24,7 @@ class AlphaBetaAI:
         return score
 
     def final_score(self, board):
-        """終局した盤面の評価。勝ち負けを最優先し、同じ勝ちなら石差が大きいほど良い。"""
+        """Score of a finished game: winning comes first, then a larger disc difference."""
         my_board = board.black if self.color == 1 else board.white
         opp_board = board.white if self.color == 1 else board.black
         diff = my_board.bit_count() - opp_board.bit_count()
@@ -92,11 +92,11 @@ class AlphaBetaAI:
         return best_move
 
     def analyze(self, board):
-        """打てる手それぞれの評価値を返す（読み筋の可視化用）。
+        """Return the score of every legal move (for the analysis view).
 
-        get_move は最善手以外の枝を刈り込むので、他の手の正確な点数がわからない。
-        ここでは手ごとに窓を全開にして探索し、全ての手の正確な評価値を求める。
-        戻り値: [((row, col), score), ...] を評価値の高い順に並べたもの
+        get_move prunes everything except the best line, so other moves have no exact score.
+        Here each move is searched with a full window to get exact scores for all of them.
+        Returns [((row, col), score), ...] sorted from best to worst.
         """
         self.tt.clear()
         self.nodes = 0
@@ -130,9 +130,9 @@ class AlphaBetaAI:
 
         if not valid_moves:
             if not board.has_valid_move(-current_color):
-                # 両者とも打てない = 終局。評価関数ではなく実際の勝敗で評価する
+                # neither side can move: the game is over, so score the actual result
                 return self.final_score(board)
-            # パス
+            # pass
             return self.alphabeta(board, depth, alpha, beta, not is_maximizing, -current_color)
 
         if depth == 0:

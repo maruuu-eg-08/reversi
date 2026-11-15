@@ -16,7 +16,7 @@ jobs:
       - run: pip install ruff
       - run: ruff check .
 
-  # Python だけの環境（ブラウザ版と同じ）でのテスト。Rust 版は入れない
+  # Tests without Rust (the pure-Python path)
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -30,7 +30,7 @@ jobs:
       - run: pip install numpy pytest
       - run: pytest -v
 
-  # Rust 版エンジン: 書式・lint・Rust のテスト、さらに Python 版と結果が一致するかのテスト
+  # Rust engine: formatting, lints, Rust tests, and tests that it matches the Python engine
   rust:
     runs-on: ubuntu-latest
     defaults:
@@ -60,12 +60,12 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # Web版は Rust 版エンジンを WebAssembly にして使う
+      # the web version runs the Rust engine compiled to WebAssembly
       - run: rustup target add wasm32-unknown-unknown
       - run: npm ci
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      # ビルドしたエンジンを Node で動かし、全レベルの AI・読み筋・定石名・終局までの対局を確認
+      # run the built engine in Node: every AI level, analysis, opening names and full games
       - run: npm test
         working-directory: frontend

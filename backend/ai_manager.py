@@ -7,9 +7,9 @@ from weighted_ai import WeightedAI
 
 
 def create_ai(level, color, weights=None, eval_coeffs=None, depth=4, time_limit=1.0, use_book=True):
-    """レベル("1"〜"5")に対応する AI を作る。
+    """Create the AI for a level ("1" to "5").
 
-    Lv.5 は time_limit 秒以内に手を返し、序盤は定石を使う。Rust 版エンジンがあればパターン評価を使う。
+    Lv.5 moves within time_limit seconds and uses the opening book; with the Rust engine it uses pattern evaluation.
     """
     level = str(level)
     if level == "1":

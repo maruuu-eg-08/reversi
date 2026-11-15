@@ -1,26 +1,26 @@
-// Rust 版エンジン（WebAssembly）を読み込んで実行する Web Worker。
-// 重い探索をメインスレッドから切り離すことで、AI の思考中も画面が固まらない。
+// Web worker that loads and runs the Rust engine (WebAssembly).
+// Running the search off the main thread keeps the page responsive while the AI thinks.
 import type { WorkerMessage, WorkerRequest } from "./protocol.js";
 import { WasmEngine } from "./wasm-engine.js";
 
 const post = (msg: WorkerMessage) => (self as unknown as Worker).postMessage(msg);
 
 async function fetchAsset(name: string): Promise<Response> {
-  // ビルド時に付けたバージョン（?v=...）を付けて、古いキャッシュと混ざらないようにする
+  // add the build version (?v=...) so cached old files are never mixed in
   const res = await fetch(new URL(`./engine/${name}${self.location.search}`, self.location.href));
-  if (!res.ok) throw new Error(`${name} を取得できません (${res.status})`);
+  if (!res.ok) throw new Error(`could not fetch ${name} (${res.status})`);
   return res;
 }
 
 async function init(): Promise<WasmEngine> {
-  post({ type: "progress", message: "AI エンジンを読み込み中…" });
+  post({ type: "progress", message: "Loading the AI engine…" });
   const [wasm, patterns, book] = await Promise.all([
     fetchAsset("reversi_engine.wasm").then((r) => r.arrayBuffer()),
     fetchAsset("pattern_weights.bin").then((r) => r.arrayBuffer()),
     fetchAsset("opening_book.txt").then((r) => r.text()),
   ]);
   const engine = await WasmEngine.create({ wasm, patterns, book }, () => performance.now());
-  post({ type: "ready", runtime: `Rust（WebAssembly）${engine.usesPatterns ? "・パターン評価" : ""}` });
+  post({ type: "ready", runtime: `Rust (WebAssembly)${engine.usesPatterns ? " · pattern evaluation" : ""}` });
   return engine;
 }
 

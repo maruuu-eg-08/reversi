@@ -1,7 +1,8 @@
-"""Web版のために Rust へ移植した部分（Lv.2〜4・読み筋・定石・定石名）が Python 版と同じ結果を返すことを確かめる。
+"""Check that the parts ported to Rust for the web version (Lv.2-4, analysis, opening book, opening
+names) return the same results as the Python versions.
 
-ブラウザ版は Python を使わずに Rust（WebAssembly）だけで動くので、Python 版と同じ強さ・同じ表示になるよう
-この一致を保つ。Rust 版をビルドしていない環境ではスキップする。
+The browser runs only Rust (WebAssembly), without Python, so this agreement keeps the web version's
+strength and display identical. Skipped when the Rust engine is not built.
 """
 
 import os
@@ -23,7 +24,7 @@ BACKEND = os.path.join(os.path.dirname(__file__), "..", "backend")
 
 
 def random_board(rng, plies):
-    """(盤面, 手番の色) を返す。"""
+    """Return (board, color to move)."""
     b = BitBoard()
     color = 1
     for _ in range(plies):
@@ -46,7 +47,7 @@ def bit(rc):
 
 
 def python_best_moves(ai, board, color, score_of):
-    """Python の WeightedAI / MinimaxAI が「この中からランダムに選ぶ」最高点の手の一覧。"""
+    """The best-scoring moves among which Python's WeightedAI / MinimaxAI choose at random."""
     best, out = -float("inf"), []
     for r, c in board.listUp(color):
         ob, ow = board.black, board.white
@@ -114,7 +115,7 @@ def test_opening_names_match():
     transcripts = ["", "f5", "a1", "zz", "f5d"]
     for op in OPENINGS:
         transcripts.append("".join(square_name(m) for m in op.moves))
-    for _ in range(300):  # ランダムな序盤（定石から外れるものも含む）
+    for _ in range(300):  # random openings (including ones that leave the named lines)
         b, color = BitBoard(), 1
         moves = []
         for _ in range(rng.randint(1, 14)):

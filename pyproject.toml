@@ -21,5 +21,5 @@ src = ["backend", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
-# E741: P（手番側）/O（相手側）はリバーシエンジンで慣例の変数名なので許可する
+# E741: P (player to move) / O (opponent) are conventional names in reversi engines
 ignore = ["E501", "E741"]

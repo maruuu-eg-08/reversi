@@ -1,10 +1,10 @@
-"""Rust 版エンジン（backend_rust/）が Python 版と同じ結果を返すことを確かめる。
+"""Check that the Rust engine (backend_rust/) returns the same results as the Python engine.
 
-固定の深さ（時間制限なし）で読めば、最善手・評価値・読んだ深さだけでなく、
-探索した局面数まで一致するはず。局面数が一致するということは、手の並べ替え・置換表・枝刈りが
-すべて同じ順番で動いているということ。
+At a fixed depth (no time limit) not only the best move, score and depth but also the number of
+searched nodes must match, which means move ordering, the transposition table and pruning all run
+in the same order.
 
-Rust 版をビルドしていない環境ではスキップする（CI ではビルドして実行する）。
+Skipped when the Rust engine is not built (CI builds it and runs these tests).
 """
 
 import random
@@ -55,7 +55,7 @@ def test_evaluation_matches_exactly():
     rng = random.Random(1)
     for _ in range(300):
         P, O = random_position(rng, rng.randint(0, 58))
-        assert rs._native.evaluate(P, O) == py.evaluate(P, O)  # 浮動小数点数としても完全に一致
+        assert rs._native.evaluate(P, O) == py.evaluate(P, O)  # bit-identical floats
 
 
 @pytest.mark.parametrize("depth", [1, 2, 3, 4, 5])
@@ -115,7 +115,7 @@ def test_time_limited_search_returns_legal_move_in_time():
 
 
 def test_rust_reads_deeper_in_same_time():
-    """同じ時間なら、Rust 版の方が深く読める（この差が強さの差になる）。"""
+    """In the same time the Rust engine searches deeper (which is where the strength difference comes from)."""
     P, O = random_position(random.Random(11), 12)
     py, rs = pair(time_limit=0.2)
     py.search(P, O)
@@ -124,7 +124,7 @@ def test_rust_reads_deeper_in_same_time():
 
 
 def test_engine_selection():
-    assert StrongAI(1).engine == "rust"  # インストールされていれば既定で Rust 版
+    assert StrongAI(1).engine == "rust"  # Rust by default when installed
     assert StrongAI(1, engine="python").engine == "python"
     with pytest.raises(ValueError):
         StrongAI(1, engine="c++")
@@ -132,7 +132,7 @@ def test_engine_selection():
         reversi_engine.Searcher([0.0] * 11, [0.0] * 64)
 
 
-# ---------- パターン評価 ----------
+# ---------- pattern evaluation ----------
 def test_pattern_indices_match():
     from patterns import indices
 
@@ -195,4 +195,4 @@ def test_level5_uses_bundled_patterns_with_rust():
 
     ai = create_ai("5", 1)
     assert ai.engine == "rust" and ai.patterns_path == DEFAULT_PATTERNS
-    assert StrongAI(1, engine="python", patterns="auto").patterns_path is None  # Python 版では使わない
+    assert StrongAI(1, engine="python", patterns="auto").patterns_path is None  # not used with the Python engine

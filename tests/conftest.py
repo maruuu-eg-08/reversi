@@ -5,5 +5,5 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _seed():
-    """AI のランダム要素を固定して、テスト結果を再現可能にする。"""
+    """Fix the AIs' randomness so test results are reproducible."""
     random.seed(1234)

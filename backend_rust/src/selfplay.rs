@@ -1,15 +1,15 @@
-//! パターン評価を学習するための自己対戦データの生成。
+//! Self-play data generation for training the pattern evaluation.
 //!
-//! 1局の流れ:
-//! 1. 序盤はランダムな手を `random_min`〜`random_max` 手打つ（局面の多様性のため）
-//! 2. その後は双方が深さ `depth` で読んで打つ
-//! 3. 空きマスが `solve_empties` 以下になったら終局まで読み切り、最善手で打ち進める
+//! How a game is played:
+//! 1. `random_min`-`random_max` random opening moves (for variety)
+//! 2. then both sides search to depth `depth`
+//! 3. from `solve_empties` empty squares on, the game is solved exactly and played perfectly
 //!
-//! 各局面の正解ラベルは「その局面の手番側から見た最終石差」。読み切りを始めた局面より後は
-//! 完全読みの正確な値で、それより前は「読み切りを始めた局面の正確な値」（＝そこから先は
-//! 双方が最善を尽くした場合の結果）を使う。空きマスは勝った側に加える（`final_score` と同じ）。
+//! Each position is labelled with the final disc difference for its side to move. From the first solved
+//! position on the labels are exact; earlier positions get the exact value of that first solved position
+//! (the result if both sides play perfectly from there). Empty squares go to the winner (as in `final_score`).
 //!
-//! 各局はゲーム番号から決まる乱数だけを使うので、同じ設定なら並列数によらず同じデータになる。
+//! Each game uses only randomness derived from its game number, so the data does not depend on the thread count.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -18,7 +18,7 @@ use crate::board::{bits, legal_moves, play};
 use crate::eval::{final_score, Evaluator, WIN_SCORE};
 use crate::search::Searcher;
 
-/// 1局面分のレコードの大きさ（バイト）
+/// Size of one record in bytes
 pub const RECORD_SIZE: usize = 22;
 
 #[derive(Clone, Copy, Debug)]
@@ -30,23 +30,23 @@ pub struct Config {
     pub seed: u64,
 }
 
-/// 学習データの1局面
+/// One training position
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Record {
-    /// 手番側の石
+    /// discs of the side to move
     pub p: u64,
-    /// 相手の石
+    /// discs of the opponent
     pub o: u64,
-    /// 手番側から見た最終石差（空きマスは勝者に加える）
+    /// final disc difference for the side to move (empty squares go to the winner)
     pub score: i8,
-    /// 開始局面からの手数
+    /// ply from the start position
     pub ply: u8,
-    /// ゲーム番号（学習用と検証用をゲーム単位で分けるため）
+    /// game number (to split training and validation data by game)
     pub game: u32,
 }
 
 impl Record {
-    /// リトルエンディアンで `RECORD_SIZE` バイトにする。
+    /// Encode as `RECORD_SIZE` little-endian bytes.
     pub fn to_bytes(&self) -> [u8; RECORD_SIZE] {
         let mut b = [0u8; RECORD_SIZE];
         b[0..8].copy_from_slice(&self.p.to_le_bytes());
@@ -68,7 +68,7 @@ impl Record {
     }
 }
 
-/// gen_data.py が書くファイル（ヘッダー＋レコード）を読み込む。
+/// Read a file written by gen_data.py (header + records).
 pub fn read_data_file(path: &std::path::Path) -> std::io::Result<Vec<Record>> {
     let invalid = |msg: &str| {
         std::io::Error::new(
@@ -79,14 +79,14 @@ pub fn read_data_file(path: &std::path::Path) -> std::io::Result<Vec<Record>> {
     let data = std::fs::read(path)?;
     const MAGIC: &[u8] = b"RVDAT\x01";
     if !data.starts_with(MAGIC) || data.len() < MAGIC.len() + 4 {
-        return Err(invalid("自己対戦データのファイルではありません"));
+        return Err(invalid("not a self-play data file"));
     }
     let n = u32::from_le_bytes(data[MAGIC.len()..MAGIC.len() + 4].try_into().unwrap()) as usize;
     let body = data
         .get(MAGIC.len() + 4 + n..)
-        .ok_or_else(|| invalid("ヘッダーが途中で切れています"))?;
+        .ok_or_else(|| invalid("truncated header"))?;
     if body.len() % RECORD_SIZE != 0 {
-        return Err(invalid("レコードが途中で切れています"));
+        return Err(invalid("truncated record"));
     }
     Ok(body
         .chunks_exact(RECORD_SIZE)
@@ -94,7 +94,7 @@ pub fn read_data_file(path: &std::path::Path) -> std::io::Result<Vec<Record>> {
         .collect())
 }
 
-/// SplitMix64: 小さく速い、再現性のある乱数
+/// SplitMix64: a small, fast, reproducible random number generator
 pub struct Rng(u64);
 
 impl Rng {
@@ -110,26 +110,29 @@ impl Rng {
         z ^ (z >> 31)
     }
 
-    /// 0 以上 n 未満の整数（n > 0）
+    /// An integer in 0..n (n > 0)
     pub fn below(&mut self, n: u64) -> u64 {
-        // n は小さいので剰余の偏りは無視できる
+        // n is small, so the modulo bias is negligible
         self.next_u64() % n
     }
 }
 
-/// 完全読みの評価値（`WIN_SCORE` ± 石差、または引き分けの 0）を石差に直す。
+/// Convert an exact-solve score (`WIN_SCORE` +/- discs, or 0 for a draw) into a disc difference.
 fn exact_discs(score: f64) -> i32 {
     if score >= WIN_SCORE {
         (score - WIN_SCORE) as i32
     } else if score <= -WIN_SCORE {
         (score + WIN_SCORE) as i32
     } else {
-        assert_eq!(score, 0.0, "完全読みの値が終局の値になっていない: {score}");
+        assert_eq!(
+            score, 0.0,
+            "an exact solve did not return a final score: {score}"
+        );
         0
     }
 }
 
-/// 1局打ち、その対局のレコードを手数の順に返す。
+/// Play one game and return its records in move order.
 pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record> {
     let mut rng = Rng::new(cfg.seed ^ u64::from(game).wrapping_mul(0xD1B5_4A32_D192_ED03));
     let n_random =
@@ -137,9 +140,9 @@ pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record
 
     let (mut p, mut o) = (0x0000_0008_1000_0000u64, 0x0000_0010_0800_0000u64);
     let mut black_to_move = true;
-    // (局面, 手数, 黒の番か, 正確な石差（読み切り後のみ）)
+    // (position, ply, black to move?, exact disc difference (after solving only))
     let mut history: Vec<(u64, u64, u8, bool, Option<i32>)> = Vec::new();
-    // 読み切りを始めた時点での、黒から見た最終石差
+    // final disc difference for black at the first solved position
     let mut black_result: Option<i32> = None;
     let mut ply: u8 = 0;
 
@@ -147,9 +150,9 @@ pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record
         let moves = legal_moves(p, o);
         if moves == 0 {
             if legal_moves(o, p) == 0 {
-                break; // 終局
+                break; // game over
             }
-            (p, o) = (o, p); // パス（局面としては記録しない）
+            (p, o) = (o, p); // pass (not recorded as a position)
             black_to_move = !black_to_move;
             continue;
         }
@@ -176,7 +179,7 @@ pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record
         ply += 1;
     }
 
-    // 読み切りに入る前に終局した場合は、実際の最終結果を使う
+    // if the game ended before solving started, use the actual final result
     let black_result = black_result.unwrap_or_else(|| {
         let discs = exact_discs(final_score(p, o));
         if black_to_move {
@@ -200,8 +203,8 @@ pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record
         .collect()
 }
 
-/// ゲーム番号 `first`〜`first + count - 1` を `threads` 個のスレッドで並列に打ち、
-/// ゲーム番号の順にレコードを並べて返す。`on_progress` は1局終わるたびに呼ばれる。
+/// Play games `first`..`first + count - 1` on `threads` threads and return the records
+/// in game order. `on_progress` is called after each finished game.
 pub fn play_games(
     first: u32,
     count: u32,
@@ -233,7 +236,7 @@ pub fn play_games(
         .into_inner()
         .unwrap()
         .into_iter()
-        .flat_map(|r| r.expect("全ゲームが終わっている"))
+        .flat_map(|r| r.expect("all games are finished"))
         .collect()
 }
 
@@ -278,7 +281,11 @@ mod tests {
             for r in &records {
                 assert_eq!(r.game, game);
                 assert_eq!(r.p & r.o, 0);
-                assert_ne!(legal_moves(r.p, r.o), 0, "記録した局面は打てる手がある");
+                assert_ne!(
+                    legal_moves(r.p, r.o),
+                    0,
+                    "recorded positions have a legal move"
+                );
                 let n_empty = (!(r.p | r.o)).count_ones();
                 if n_empty <= cfg().solve_empties {
                     let (_, exact) = s.solve(r.p, r.o);
@@ -290,7 +297,7 @@ mod tests {
                     );
                 }
             }
-            // 手数は 0 から順に増える
+            // plies increase from 0 one by one
             assert!(records.windows(2).all(|w| w[1].ply == w[0].ply + 1));
         }
     }
@@ -315,7 +322,7 @@ mod tests {
             .collect();
         assert!(
             distinct.len() >= 18,
-            "ランダムな序盤でほぼすべての対局が別の進行になる"
+            "random openings make almost every game different"
         );
     }
 }

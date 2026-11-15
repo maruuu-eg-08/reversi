@@ -1,11 +1,9 @@
-"""名前の付いた定石（虎・牛・ローズなど）を棋譜から判定する。
+"""Recognize named openings (Tiger, Cow, Rose, ...) from a game record.
 
-手順は Robert Gatliff の定石リスト（77種）による:
+The sequences come from Robert Gatliff's list of 77 named openings:
     https://www.samsoft.org.uk/reversi/openings.htm
-リストは初手を c4 で書いているが、初手 f5 / d3 / e6 の対局も盤面を回転・反転すれば同じなので、
-判定時に棋譜の向きをリストに合わせてから比較する。
-
-日本語名は、日本で一般に使われている呼び名が確かなものだけ付けている（それ以外は英語名で表示）。
+The list starts with c4. Games starting with f5, d3 or e6 are the same up to rotation/reflection,
+so the record is rotated to match the list before comparing.
 """
 
 from dataclasses import dataclass
@@ -16,7 +14,7 @@ from strong_ai import flips, legal_moves
 START_BLACK = 0x0000000810000000
 START_WHITE = 0x0000001008000000
 
-# (手順, 英語名)。手順は Gatliff のリストの表記をそのまま小文字にしたもの
+# (sequence, name). Sequences are Gatliff's notation in lower case
 _GATLIFF = [
     ("c4c3", "Diagonal Opening"),
     ("c4c3d3c5b2", "X-square Opening"),
@@ -97,38 +95,23 @@ _GATLIFF = [
     ("c4e3f6e6f5g6e7c5", "Aubrey (Feldborg Continuation)"),
 ]
 
-# 日本で一般に使われている呼び名
-_JAPANESE = {
-    "Diagonal Opening": "斜め取り",
-    "Parallel Opening": "並び取り",
-    "Perpendicular Opening": "縦取り",
-    "Tiger": "虎",
-    "Cow": "牛",
-    "Cat": "猫",
-    "Rose": "ローズ",
-    "Buffalo/Kenichi Variation": "バッファロー",
-    "Heath/Tobidashi": "ヒース（飛び出し）",
-}
-
-
 @dataclass(frozen=True)
 class Opening:
-    moves: tuple  # リストの向きでの手順（1ビットの整数の並び）
-    name: str  # 英語名
-    japanese: str | None = None
+    moves: tuple  # sequence in the list's orientation (single-bit integers)
+    name: str
 
     @property
     def display_name(self):
-        return f"{self.japanese}（{self.name}）" if self.japanese else self.name
+        return self.name
 
 
 def _split(seq):
     return tuple(parse_square(seq[i : i + 2]) for i in range(0, len(seq), 2))
 
 
-OPENINGS = tuple(Opening(_split(seq), name, _JAPANESE.get(name)) for seq, name in _GATLIFF)
+OPENINGS = tuple(Opening(_split(seq), name) for seq, name in _GATLIFF)
 
-# 開始局面を変えない対称変換（4通り）。棋譜の向きをリストに合わせるのに使う
+# The 4 symmetries that keep the start position; used to align a record with the list
 _START_SYMMETRIES = tuple(
     s for s in range(N_SYMMETRIES) if transform(START_BLACK, s) == START_BLACK and transform(START_WHITE, s) == START_WHITE
 )
@@ -136,7 +119,7 @@ _FIRST_MOVE = OPENINGS[0].moves[0]  # c4
 
 
 def _normalize(moves):
-    """初手が c4 になるように棋譜を回転・反転する。初手が不正なら None。"""
+    """Rotate/reflect the record so the first move is c4. None if the first move is illegal."""
     if not moves:
         return ()
     for s in _START_SYMMETRIES:
@@ -146,9 +129,9 @@ def _normalize(moves):
 
 
 def identify(moves):
-    """棋譜（1ビットの整数またはマス名の並び、パスは含めない）に一致する、いちばん長い定石を返す。
+    """Return the longest named opening matching the record (single-bit ints or square names, no passes).
 
-    対局が定石から外れた後も、外れる前に通った最も長い定石を返す。どれにも当てはまらなければ None。
+    After the game leaves the book, the longest opening passed through is still returned. None if no match.
     """
     moves = tuple(parse_square(m) if isinstance(m, str) else m for m in moves)
     normalized = _normalize(moves)
@@ -163,7 +146,7 @@ def identify(moves):
 
 
 def replay(moves):
-    """手順を開始局面から打ち、(黒, 白) を返す。不正な手があれば ValueError（テスト用）。"""
+    """Play a sequence from the start and return (black, white); ValueError on an illegal move (for tests)."""
     P, O = START_BLACK, START_WHITE
     black_to_move = True
     for x in moves:
@@ -171,7 +154,7 @@ def replay(moves):
             P, O = O, P
             black_to_move = not black_to_move
         if not x & legal_moves(P, O):
-            raise ValueError(f"{square_name(x)} は打てません")
+            raise ValueError(f"{square_name(x)} is not legal")
         f = flips(P, O, x)
         P, O = O ^ f, P | x | f
         black_to_move = not black_to_move

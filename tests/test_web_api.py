@@ -10,7 +10,7 @@ def test_new_game_state():
     assert s["color"] == 1
     assert (s["blackCount"], s["whiteCount"]) == (2, 2)
     assert sorted(map(tuple, s["legal"])) == [(2, 3), (3, 2), (4, 5), (5, 4)]
-    assert isinstance(s["black"], str)  # 64ビット値は文字列で受け渡す
+    assert isinstance(s["black"], str)  # 64-bit values travel as strings
 
 
 def test_play_switches_turn_and_reports_flips():
@@ -50,7 +50,7 @@ def test_analyze_best_move_matches_get_move_score():
     scores = [m["score"] for m in res["moves"]]
     assert scores == sorted(scores, reverse=True)
 
-    # analyze の最高点の手は、get_move が選ぶ手と同じ点数になる
+    # the best score in analyze equals the score of get_move's choice
     b = BitBoard()
     b.black, b.white = int(s["black"]), int(s["white"])
     ai = AlphaBetaAI(-1, max_depth=3)
@@ -61,7 +61,7 @@ def test_analyze_best_move_matches_get_move_score():
 
 def test_analyze_reports_forced_win():
     b = BitBoard()
-    b.black, b.white = 1 << 1, 1 << 0  # 白(0,0) 黒(0,1): 白が(0,2)に打てば全滅で勝ち
+    b.black, b.white = 1 << 1, 1 << 0  # white (0,0), black (0,1): white wins outright with (0,2)
     res = json.loads(analyze(str(b.black), str(b.white), -1, 2))
     assert res["moves"][0]["outcome"] == "win"
     assert res["moves"][0]["discDiff"] == 3
@@ -78,14 +78,14 @@ def test_ai_move_level5_reports_depth():
 def test_opening_names():
     from web_api import opening
 
-    assert json.loads(opening("f5d6c3d3c4"))["name"] == "虎（Tiger）"
-    assert json.loads(opening("f5d6"))["name"] == "縦取り（Perpendicular Opening）"
+    assert json.loads(opening("f5d6c3d3c4"))["name"] == "Tiger"
+    assert json.loads(opening("f5d6"))["name"] == "Perpendicular Opening"
     assert json.loads(opening(""))["name"] is None
-    assert json.loads(opening("a1"))["name"] is None  # 不正な初手
-    assert json.loads(opening("zz"))["name"] is None  # 不正な表記
+    assert json.loads(opening("a1"))["name"] is None  # illegal first move
+    assert json.loads(opening("zz"))["name"] is None  # invalid notation
 
 
 def test_ai_move_reports_book_flag():
     s = json.loads(new_game())
     r = json.loads(ai_move(s["black"], s["white"], 1, "4", 2))
-    assert r["book"] is False  # Lv.4 は定石を使わない
+    assert r["book"] is False  # Lv.4 does not use the book

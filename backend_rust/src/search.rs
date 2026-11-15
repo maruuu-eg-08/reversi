@@ -1,7 +1,7 @@
-//! 探索。`backend/strong_ai.py` の `StrongAI` と同じ手順で読む。
+//! Search. Follows exactly the same procedure as `StrongAI` in `backend/strong_ai.py`.
 //!
-//! 時間制限なし（固定の深さ）で読んだ場合、Python 版と同じ最善手・評価値・探索局面数になる
-//! （tests/test_rust_engine.py で確認）。違いは速さだけなので、同じ時間ならより深く読める。
+//! With no time limit (fixed depth) it returns the same best move, score and node count as Python
+//! (tests/test_rust_engine.py). Only the speed differs, so it searches deeper in the same time.
 
 use std::sync::Arc;
 
@@ -12,14 +12,14 @@ use crate::clock::now;
 use crate::eval::{final_score, Evaluator};
 use crate::pattern::PatternWeights;
 
-/// PVS のヌルウィンドウの幅（Python 版と同じ値）
+/// Null-window width for PVS (same value as Python)
 const NULL_WINDOW: f64 = 1e-6;
-/// この局面数ごとに時間切れかどうかを確かめる
+/// Check the clock every this many nodes
 const TIME_CHECK_INTERVAL: u64 = 1024;
-/// 経過時間がこの割合を超えたら、次の深さを読み始めない
+/// Do not start the next depth once this fraction of the time is used
 const NEXT_DEPTH_TIME_RATIO: f64 = 0.7;
 
-/// 置換表の値の種類
+/// Kind of value stored in the transposition table
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Bound {
     Exact,
@@ -35,34 +35,34 @@ struct Entry {
     best_move: u64,
 }
 
-/// 時間切れで探索を打ち切ったことを表す
+/// The search was aborted because time ran out
 #[derive(Debug)]
 struct Timeout;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SearchResult {
-    /// 最善手（1ビット）。打てる手がなければ 0
+    /// best move (single bit); 0 if there is no legal move
     pub best_move: u64,
-    /// 手番側から見た評価値
+    /// score for the player to move
     pub score: f64,
-    /// 読み終えた深さ
+    /// completed depth
     pub depth: u32,
-    /// 探索した局面数
+    /// nodes searched
     pub nodes: u64,
-    /// 終局まで読み切ったか
+    /// whether the game was solved to the end
     pub solved: bool,
 }
 
 pub struct Searcher {
-    /// 線形評価（パターン評価を使う場合も、手の並べ替えにはこの位置の重みを使う）
+    /// linear evaluation (its positional weights are also used for move ordering with patterns)
     eval: Evaluator,
-    /// パターン評価の重み。あれば葉の評価にこちらを使う
+    /// pattern-evaluation weights; used at the leaves when present
     pattern: Option<Arc<PatternWeights>>,
     tt: FxHashMap<(u64, u64), Entry>,
     nodes: u64,
-    /// 打ち切る時刻（`clock::now()` の秒）
+    /// deadline (seconds of `clock::now()`)
     deadline: Option<f64>,
-    /// 読みかけの深さで、ここまでに見つかった最善手（時間切れのときに使う）
+    /// best move found so far in the current iteration (used on timeout)
     iter_best: Option<(u64, f64)>,
 }
 
@@ -78,13 +78,13 @@ impl Searcher {
         }
     }
 
-    /// 葉の評価にパターン評価を使うようにする。
+    /// Use pattern evaluation at the leaves.
     pub fn with_patterns(mut self, weights: Arc<PatternWeights>) -> Self {
         self.pattern = Some(weights);
         self
     }
 
-    /// 手番側 `p` から見た静的評価値（深さ0）。`my_moves` は `legal_moves(p, o)`。
+    /// Static evaluation (depth 0) for the player to move `p`; `my_moves` is `legal_moves(p, o)`.
     #[inline]
     pub fn evaluate(&self, p: u64, o: u64, my_moves: u64) -> f64 {
         match &self.pattern {
@@ -93,7 +93,7 @@ impl Searcher {
         }
     }
 
-    /// 反復深化で読む。`time_limit` 秒（無限大なら制限なし）か深さ `max_depth` まで。
+    /// Iterative deepening for `time_limit` seconds (infinite = no limit) or up to `max_depth`.
     pub fn search(&mut self, p: u64, o: u64, time_limit: f64, max_depth: u32) -> SearchResult {
         self.tt.clear();
         self.nodes = 0;
@@ -112,16 +112,16 @@ impl Searcher {
             return result(0, 0.0, 0, 0, false);
         }
         if moves & (moves - 1) == 0 {
-            return result(moves, 0.0, 0, 0, false); // 打てる手が1つだけ
+            return result(moves, 0.0, 0, 0, false); // only one legal move
         }
         self.deepen(p, o, moves, start, time_limit, max_depth)
     }
 
-    /// 終局まで読み切り、(最善手, 手番側から見た正確な評価値) を返す。
-    /// `search` と違い、打てる手が1つだけの局面でも読んで正確な値を返す。打てる手がない局面には使えない。
+    /// Solve to the end of the game and return (best move, exact score for the player to move).
+    /// Unlike `search`, it also searches when there is a single legal move. Not for positions with no legal move.
     pub fn solve(&mut self, p: u64, o: u64) -> (u64, f64) {
         let moves = legal_moves(p, o);
-        assert_ne!(moves, 0, "solve は打てる手がある局面で呼ぶ");
+        assert_ne!(moves, 0, "solve needs a position with a legal move");
         self.tt.clear();
         self.nodes = 0;
         self.deadline = None;
@@ -130,7 +130,7 @@ impl Searcher {
         (r.best_move, r.score)
     }
 
-    /// 反復深化の本体。
+    /// The iterative-deepening loop.
     fn deepen(
         &mut self,
         p: u64,
@@ -155,7 +155,7 @@ impl Searcher {
             match self.root(p, o, depth as i32, best_move) {
                 Ok((m, s)) => (best_move, best_score, done_depth) = (m, s, depth),
                 Err(Timeout) => {
-                    // 前回の最善手を最初に読むので、それより良い手が見つかっていれば採用する
+                    // the previous best move is searched first, so any better move found so far is safe to use
                     if let Some((m, s)) = self.iter_best {
                         if depth > 1 {
                             (best_move, best_score) = (m, s);
@@ -169,16 +169,16 @@ impl Searcher {
                 break;
             }
             if now() - start > time_limit * NEXT_DEPTH_TIME_RATIO {
-                break; // 残り時間では次の深さの最初の手すら読み終わらない
+                break; // with the time left, the next depth could not even finish its first move
             }
         }
         if best_move == 0 {
-            best_move = self.ordered(p, o, moves, 0, 0)[0]; // 深さ1すら読み終わらなかった場合
+            best_move = self.ordered(p, o, moves, 0, 0)[0]; // fallback when not even depth 1 finished
         }
         result(best_move, best_score, done_depth, self.nodes, solved)
     }
 
-    /// 全合法手を `depth` 手先まで全幅窓で読み、良い順に (手, 評価値) を返す。
+    /// Search every legal move to `depth` with a full window and return (move, score), best first.
     pub fn score_moves(&mut self, p: u64, o: u64, depth: u32) -> Vec<(u64, f64)> {
         self.tt.clear();
         self.nodes = 0;
@@ -188,10 +188,10 @@ impl Searcher {
             let (np, no) = play(p, o, x);
             let score = -self
                 .negamax(np, no, depth as i32 - 1, f64::NEG_INFINITY, f64::INFINITY)
-                .expect("時間制限なしなので打ち切られない");
+                .expect("no time limit, so the search cannot time out");
             results.push((x, score));
         }
-        // 評価値の高い順、同点はマスの番号順（Python 版と同じ並び）
+        // highest score first, ties by square index (same order as Python)
         results.sort_by(|a, b| cmp_f64(b.1, a.1).then(a.0.cmp(&b.0)));
         results
     }
@@ -207,12 +207,12 @@ impl Searcher {
         }
     }
 
-    /// 探索する手の順番を決める（Python 版の `_ordered` と同じ並び）。
+    /// Order the moves to search (same order as Python's `_ordered`).
     fn ordered(&self, p: u64, o: u64, moves: u64, tt_move: u64, depth: i32) -> Vec<u64> {
         let mut list: Vec<u64> = bits(moves).collect();
         if list.len() > 1 {
             if depth >= 3 {
-                // 速さ優先: 打った後の相手の着手可能数が少ない手から（同数なら重みの高い手、さらに同じならマスの番号順）
+                // fastest-first: fewest opponent replies first (then higher weight, then square index)
                 let mut keyed: Vec<(f64, u64)> = list
                     .iter()
                     .map(|&x| {
@@ -224,7 +224,7 @@ impl Searcher {
                 keyed.sort_by(|a, b| cmp_f64(a.0, b.0).then(a.1.cmp(&b.1)));
                 list = keyed.into_iter().map(|(_, x)| x).collect();
             } else {
-                // 重みの高い順（安定ソートなので同じ重みはマスの番号順のまま）
+                // highest weight first (stable sort keeps square order for equal weights)
                 list.sort_by(|a, b| cmp_f64(self.eval.weight(*b), self.eval.weight(*a)));
             }
         }
@@ -255,7 +255,7 @@ impl Searcher {
             if legal_moves(o, p) == 0 {
                 return Ok(final_score(p, o));
             }
-            return Ok(-self.negamax(o, p, depth, -beta, -alpha)?); // パス
+            return Ok(-self.negamax(o, p, depth, -beta, -alpha)?); // pass
         }
         if depth <= 0 {
             return Ok(self.evaluate(p, o, moves));
@@ -287,7 +287,7 @@ impl Searcher {
             let score = if i == 0 {
                 -self.negamax(np, no, depth - 1, -beta, -alpha)?
             } else {
-                // PVS: まずヌルウィンドウで「alpha を超えるか」だけ調べ、超えたら読み直す
+                // PVS: test with a null window whether the move beats alpha; re-search if it does
                 let s = -self.negamax(np, no, depth - 1, -alpha - NULL_WINDOW, -alpha)?;
                 if alpha < s && s < beta {
                     -self.negamax(np, no, depth - 1, -beta, -s)?
@@ -326,7 +326,7 @@ impl Searcher {
         Ok(best)
     }
 
-    /// ルートで全手を読み、(最善手, 評価値) を返す。
+    /// Search every root move and return (best move, score).
     fn root(&mut self, p: u64, o: u64, depth: i32, prev_best: u64) -> Result<(u64, f64), Timeout> {
         let beta = f64::INFINITY;
         let mut alpha = f64::NEG_INFINITY;
@@ -357,12 +357,12 @@ impl Searcher {
     }
 }
 
-/// Python の `<` と同じ意味の比較（0.0 と -0.0 は等しい）。値に NaN は現れない。
+/// Comparison with the meaning of Python's `<` (0.0 equals -0.0). Values are never NaN.
 fn cmp_f64(a: f64, b: f64) -> std::cmp::Ordering {
     a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
 }
 
-/// `time_limit` 秒後の時刻。無限大や NaN なら制限なし。
+/// Deadline `time_limit` seconds after `start`; no limit for infinity or NaN.
 fn deadline_after(start: f64, time_limit: f64) -> Option<f64> {
     time_limit.is_finite().then(|| start + time_limit.max(0.0))
 }
@@ -380,7 +380,7 @@ mod tests {
         Searcher::new(Evaluator::new(&coeffs, &weights).unwrap())
     }
 
-    /// 開始局面から乱数で n 手進めた局面（簡単な線形合同法で再現性を保つ）
+    /// Position after n random moves from the start (a simple LCG keeps it reproducible)
     fn random_position(seed: u64, n: u32) -> (u64, u64) {
         let (mut p, mut o) = START;
         let mut r = seed;
@@ -403,7 +403,7 @@ mod tests {
         (p, o)
     }
 
-    /// 単純な（枝刈りなしの）negamax による終局までの正確な値
+    /// Exact value by plain negamax without pruning
     fn brute_force(p: u64, o: u64) -> f64 {
         let moves = legal_moves(p, o);
         if moves == 0 {

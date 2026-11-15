@@ -1,67 +1,67 @@
-//! パターン評価の重みの学習。
+//! Training of the pattern-evaluation weights.
 //!
-//! 段階（stage）ごとに、局面の特徴（各パターンの並び・定数項・着手可能数の差）から最終石差を予測する
-//! 線形モデルを、L2 正則化つき最小二乗法で解く:
+//! For each stage, a linear model predicting the final disc difference from the position's features
+//! (pattern configurations, a bias and the mobility difference) is fitted by L2-regularized least squares:
 //!
 //! ```text
-//!   最小化  Σ (y_i - x_i · w)^2 + λ |w|^2   ⇔   (XᵀX + λI) w = Xᵀy
+//!   minimize  Σ (y_i - x_i · w)^2 + λ |w|^2   ⇔   (XᵀX + λI) w = Xᵀy
 //! ```
 //!
-//! X は1行あたり 86 個しか 0 でない値がない疎な行列なので、XᵀX を作らずに
-//! 「X v」と「Xᵀ u」だけを使う前処理つき共役勾配法（Jacobi 前処理）で解く。
-//! 学習率などの調整がいらず、解が一つに決まる。
+//! X is sparse (only 86 non-zeros per row), so instead of forming XᵀX the system is solved by
+//! Jacobi-preconditioned conjugate gradients using only `X v` and `Xᵀ u`.
+//! No learning rate to tune, and the solution is unique.
 //!
-//! 足し算の順番がスレッド数に左右されないように並列化しているので、何スレッドで
-//! 計算しても同じ重みになる（X v は行ごと、Xᵀ u は列ごとに独立に計算し、内積は固定の大きさの塊ごとに足す）。
+//! The parallel work is arranged so the order of additions never depends on the thread count, so any
+//! number of threads gives the same weights (X v is computed per row, Xᵀ u per column, dot products in fixed-size chunks).
 
 use crate::board::legal_moves;
 use crate::eval::Evaluator;
 use crate::pattern::{layout, stage_of, PatternWeights, Stage, N_STAGES, SCALE};
 use crate::selfplay::Record;
 
-/// 内積を足し合わせる塊の大きさ（スレッド数によらず固定）
+/// Chunk size for summing dot products (fixed, independent of the thread count)
 const DOT_CHUNK: usize = 1 << 14;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TrainConfig {
-    /// L2 正則化の強さ
+    /// L2 regularization strength
     pub lambda: f64,
-    /// 共役勾配法の最大反復回数
+    /// maximum conjugate-gradient iterations
     pub max_iter: usize,
-    /// 残差がこの割合（初期値に対する比）を下回ったら止める
+    /// stop when the residual falls below this fraction of its initial value
     pub tol: f64,
-    /// ゲーム番号をこの数で割った余りが 0 の対局を検証用にする
+    /// games whose number is divisible by this are used for validation
     pub valid_mod: u32,
     pub threads: usize,
 }
 
-/// 1段階分の学習結果
+/// Training result of one stage
 #[derive(Clone, Debug)]
 pub struct StageReport {
     pub stage: usize,
     pub n_train: usize,
     pub n_valid: usize,
     pub iterations: usize,
-    /// 学習データでの誤差（整数に丸めた重みで計算）
+    /// error on the training data (with the integer-rounded weights)
     pub train_rmse: f64,
-    /// 検証データでの誤差と決定係数（整数に丸めた重みで計算）
+    /// error and R² on the validation data (with the integer-rounded weights)
     pub valid_rmse: f64,
     pub valid_r2: f64,
-    /// 比較用: 今の線形評価関数の検証データでの誤差と決定係数
+    /// for comparison: error and R² of the current linear evaluation on the validation data
     pub linear_rmse: f64,
     pub linear_r2: f64,
-    /// i16 の範囲に収まらず切り詰めた重みの数
+    /// number of weights clamped to the i16 range
     pub clamped: usize,
 }
 
-/// 学習用に特徴を取り出した1段階分のデータ
+/// One stage of training data with the features extracted
 struct Dataset {
-    /// 各行のパターンの特徴番号（表の中の位置）。行 i は ids[i*k .. (i+1)*k]
+    /// pattern feature ids (positions in the table) of each row; row i is ids[i*k .. (i+1)*k]
     ids: Vec<u32>,
     k: usize,
     mobility: Vec<f64>,
     y: Vec<f64>,
-    /// 列 → その特徴を含む行（同じ行に2回現れれば2回入る）。CSC 形式
+    /// column -> rows containing that feature (twice if it appears twice in a row), CSC layout
     col_start: Vec<usize>,
     col_rows: Vec<u32>,
 }
@@ -87,7 +87,7 @@ impl Dataset {
             ));
             y.push(f64::from(r.score));
         }
-        // 列ごとの行の一覧（行番号の小さい順）
+        // rows of each column, in increasing order
         let mut col_start = vec![0usize; lay.table_size + 1];
         for &id in &ids {
             col_start[id as usize + 1] += 1;
@@ -116,12 +116,12 @@ impl Dataset {
     }
 }
 
-/// 未知数の並び: [パターンの表 (table_size) | 定数項 | 着手可能数の係数]
+/// Layout of the unknowns: [pattern tables (table_size) | bias | mobility coefficient]
 fn dim() -> usize {
     layout().table_size + 2
 }
 
-/// `out[i] = f(i)` を並列に計算する（各要素は独立なので結果はスレッド数によらない）。
+/// Compute `out[i] = f(i)` in parallel (elements are independent, so the result does not depend on threads).
 fn par_fill(out: &mut [f64], threads: usize, f: &(dyn Fn(usize) -> f64 + Sync)) {
     let chunk = out.len().div_ceil(threads.max(1)).max(1);
     std::thread::scope(|s| {
@@ -135,7 +135,7 @@ fn par_fill(out: &mut [f64], threads: usize, f: &(dyn Fn(usize) -> f64 + Sync)) 
     });
 }
 
-/// 内積。固定の大きさの塊ごとに足し、塊の合計を順番に足すので結果はスレッド数によらない。
+/// Dot product summed in fixed-size chunks, then the chunk sums in order, so it does not depend on threads.
 fn dot(a: &[f64], b: &[f64], threads: usize) -> f64 {
     let n_chunks = a.len().div_ceil(DOT_CHUNK);
     let mut partial = vec![0.0; n_chunks];
@@ -150,7 +150,7 @@ fn dot(a: &[f64], b: &[f64], threads: usize) -> f64 {
     partial.iter().sum()
 }
 
-/// 総和（`dot` と同じく、結果はスレッド数によらない）。
+/// Sum (like `dot`, independent of the thread count).
 fn sum(a: &[f64], threads: usize) -> f64 {
     let n_chunks = a.len().div_ceil(DOT_CHUNK);
     let mut partial = vec![0.0; n_chunks];
@@ -162,7 +162,7 @@ fn sum(a: &[f64], threads: usize) -> f64 {
     partial.iter().sum()
 }
 
-/// X v（各行の予測値）
+/// X v (the prediction of every row)
 fn mul_x(d: &Dataset, v: &[f64], out: &mut [f64], threads: usize) {
     let t = layout().table_size;
     let (bias, mob) = (v[t], v[t + 1]);
@@ -186,7 +186,7 @@ fn mul_a(d: &Dataset, v: &[f64], lambda: f64, xv: &mut [f64], out: &mut [f64], t
     out[t + 1] = dot(xv, &d.mobility, threads) + lambda * v[t + 1];
 }
 
-/// Xᵀ y と、前処理に使う (XᵀX + λI) の対角成分
+/// Xᵀ y and the diagonal of (XᵀX + λI) for the preconditioner
 fn rhs_and_diag(d: &Dataset, lambda: f64, threads: usize) -> (Vec<f64>, Vec<f64>) {
     let t = layout().table_size;
     let mut b = vec![0.0; dim()];
@@ -199,7 +199,7 @@ fn rhs_and_diag(d: &Dataset, lambda: f64, threads: usize) -> (Vec<f64>, Vec<f64>
     b[t] = sum(&d.y, threads);
     b[t + 1] = dot(&d.y, &d.mobility, threads);
 
-    // 列 c の対角成分 = Σ_行 (その行に c が現れる回数)^2 + λ
+    // diagonal of column c = sum over rows of (occurrences of c in the row)^2 + λ
     let mut diag = vec![lambda; dim()];
     par_fill(&mut diag[..t], threads, &|c| {
         let rows = &d.col_rows[d.col_start[c]..d.col_start[c + 1]];
@@ -220,13 +220,13 @@ fn rhs_and_diag(d: &Dataset, lambda: f64, threads: usize) -> (Vec<f64>, Vec<f64>
     (b, diag)
 }
 
-/// 前処理つき共役勾配法で (XᵀX + λI) w = Xᵀy を解く。(解, 反復回数) を返す。
+/// Solve (XᵀX + λI) w = Xᵀy by preconditioned conjugate gradients; returns (solution, iterations).
 fn solve(d: &Dataset, cfg: &TrainConfig) -> (Vec<f64>, usize) {
     let n = dim();
     let th = cfg.threads;
     let (b, diag) = rhs_and_diag(d, cfg.lambda, th);
     let mut w = vec![0.0; n];
-    let mut r = b.clone(); // w = 0 なので残差 = b
+    let mut r = b.clone(); // w = 0, so the residual is b
     let mut z: Vec<f64> = r.iter().zip(&diag).map(|(r, d)| r / d).collect();
     let mut p = z.clone();
     let mut rz = dot(&r, &z, th);
@@ -258,7 +258,7 @@ fn solve(d: &Dataset, cfg: &TrainConfig) -> (Vec<f64>, usize) {
     (w, iterations)
 }
 
-/// 実数の重みを 1/SCALE 単位の整数に丸める。(段階の重み, 切り詰めた数)
+/// Round real weights to integers in units of 1/SCALE; returns (stage weights, number clamped).
 fn quantize(w: &[f64]) -> (Stage, usize) {
     let t = layout().table_size;
     let mut clamped = 0;
@@ -283,7 +283,7 @@ fn quantize(w: &[f64]) -> (Stage, usize) {
     )
 }
 
-/// 予測の誤差（RMSE）と決定係数（R²）
+/// Prediction error (RMSE) and coefficient of determination (R²)
 fn metrics(pred: impl Iterator<Item = f64>, y: &[f64]) -> (f64, f64) {
     if y.is_empty() {
         return (f64::NAN, f64::NAN);
@@ -301,7 +301,7 @@ fn metrics(pred: impl Iterator<Item = f64>, y: &[f64]) -> (f64, f64) {
     )
 }
 
-/// 全段階を学習する。`linear` は比較用の今の評価関数。`on_stage` は段階ごとの終了時に呼ばれる。
+/// Train every stage. `linear` is the current evaluation for comparison; `on_stage` is called after each stage.
 pub fn train(
     records: &[Record],
     cfg: &TrainConfig,
@@ -387,7 +387,7 @@ mod tests {
         play_games(0, 400, &cfg, &linear(), 4, &|_| {})
     }
 
-    /// ラベルを「既知の重みでの評価値」にしたデータなら、学習でその評価値をほぼ再現できる
+    /// with labels equal to a known evaluation, training reproduces that evaluation almost exactly
     #[test]
     fn recovers_a_known_linear_target() {
         let mut target = PatternWeights::zeros();
@@ -396,7 +396,7 @@ mod tests {
             st.bias = 64 * 2;
             st.mobility = 64;
             for v in st.table.iter_mut() {
-                *v = (rng.below(129) as i16 - 64) / 8; // 小さな値
+                *v = (rng.below(129) as i16 - 64) / 8; // small values
             }
         }
         let records: Vec<Record> = positions()
@@ -416,7 +416,7 @@ mod tests {
         };
         let (w, reports) = train(&records, &cfg, &linear(), &mut |_| {});
         for rep in reports.iter().filter(|r| r.n_train > 0) {
-            // ラベル自体が整数に丸めてあるので、誤差は丸めの分（0.5 以下）程度に収まる
+            // the labels themselves are rounded to integers, so the error stays around the rounding (<= 0.5)
             assert!(
                 rep.train_rmse < 0.6,
                 "stage {} rmse {}",
@@ -469,8 +469,8 @@ mod tests {
     fn quantize_rounds_and_clamps() {
         let mut w = vec![0.0; dim()];
         w[0] = 1.0; // → 64
-        w[1] = -0.5 / 64.0; // → -0.5 → 四捨五入で -1（偶数丸めではなく 0 から遠い方）
-        w[2] = 1e6; // → 切り詰め
+        w[1] = -0.5 / 64.0; // -> -0.5 -> rounds to -1 (away from zero, not to even)
+        w[2] = 1e6; // -> clamped
         let t = layout().table_size;
         w[t] = 0.25;
         w[t + 1] = -2.0;

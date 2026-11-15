@@ -1,16 +1,16 @@
-//! Lv.1〜4 の AI と、Web版の「読み筋」表示の Rust 版（ブラウザ用）。
+//! Rust port of the Lv.1-4 AIs and the web analysis view (for the browser).
 //!
-//! `backend/random_ai.py`, `weighted_ai.py`, `minimax.py`, `alphabeta_ai.py` と同じ手順で読む。
-//! Lv.2・3 は同点の手からランダムに選ぶので、「最善手の候補の一覧」が Python 版と一致することを、
-//! Lv.4 は手・評価値・探索局面数が一致することを tests/test_rust_engine.py で確かめている。
+//! Searches exactly like `backend/random_ai.py`, `weighted_ai.py`, `minimax.py` and `alphabeta_ai.py`.
+//! Lv.2/3 choose randomly among equally good moves, so the set of best moves is compared with Python;
+//! for Lv.4 the move, scores and node count are compared (tests/test_rust_web_port.py).
 //!
-//! 盤面は Python 版に合わせて (黒, 白, 手番の色 1=黒 / -1=白) で受け取る。
+//! Boards are taken like the Python versions: (black, white, color to move 1 = black / -1 = white).
 
 use rustc_hash::FxHashMap;
 
 use crate::board::{bits, flips, legal_moves};
 
-/// 評価パラメータ（`backend/weights.py` と同じ値。一致はテストで確認）
+/// Evaluation parameters (same values as `backend/weights.py`; checked by a test)
 pub mod params {
     pub const POSITION_WEIGHTS: [f64; 64] = [
         27.87, 10.59, 27.35, 15.77, 15.77, 27.35, 10.59, 27.87, //
@@ -37,7 +37,7 @@ pub mod params {
         17.29, 18.43, 38.49, -28.38, -28.38, 38.49, 18.43, 17.29, //
         50.0, 17.29, 6.81, 11.32, 11.32, 6.81, 17.29, 50.0,
     ];
-    /// `minimax.py` の MinimaxAI が持っている重み表
+    /// Weight table of MinimaxAI in `minimax.py`
     pub const MINIMAX_WEIGHTS: [i32; 64] = [
         30, -12, 0, -1, -1, 0, -12, 30, //
         -12, -15, -3, -3, -3, -3, -15, -12, //
@@ -58,7 +58,7 @@ pub mod params {
 
 use params::*;
 
-/// (黒, 白, 手番の色) から (手番側, 相手側)
+/// (black, white, color to move) -> (player, opponent)
 #[inline]
 fn sides(black: u64, white: u64, color: i8) -> (u64, u64) {
     if color == 1 {
@@ -68,7 +68,7 @@ fn sides(black: u64, white: u64, color: i8) -> (u64, u64) {
     }
 }
 
-/// `color` が `x` に打った後の (黒, 白)
+/// (black, white) after `color` plays `x`
 #[inline]
 fn put(black: u64, white: u64, color: i8, x: u64) -> (u64, u64) {
     let (p, o) = sides(black, white, color);
@@ -81,7 +81,7 @@ fn put(black: u64, white: u64, color: i8, x: u64) -> (u64, u64) {
     }
 }
 
-/// Python の `BitBoard.listUp` と同じ順（マスの番号の小さい順）の合法手
+/// Legal moves in the order of Python's `BitBoard.listUp` (increasing square index)
 fn list_moves(black: u64, white: u64, color: i8) -> Vec<u64> {
     let (p, o) = sides(black, white, color);
     bits(legal_moves(p, o)).collect()
@@ -93,7 +93,7 @@ fn sq(x: u64) -> usize {
 
 // ---------- Lv.2: WeightedAI ----------
 
-/// 打った後の盤面を重み表で評価し、最高点の手の一覧を返す（Python 版はこの中からランダムに選ぶ）。
+/// Score the board after each move with the weight table and return the best moves (Python picks one at random).
 pub fn weighted_best_moves(black: u64, white: u64, color: i8) -> Vec<u64> {
     let evaluate = |b: u64, w: u64| {
         let mut score = 0.0;
@@ -116,7 +116,7 @@ pub fn weighted_best_moves(black: u64, white: u64, color: i8) -> Vec<u64> {
     })
 }
 
-/// 点数が最大の手を（元の順番のまま）すべて返す
+/// All moves with the maximum score, in their original order
 fn best_by<T: PartialOrd + Copy>(moves: Vec<u64>, mut score: impl FnMut(u64) -> T) -> Vec<u64> {
     let mut best: Option<T> = None;
     let mut out = Vec::new();
@@ -136,7 +136,7 @@ fn best_by<T: PartialOrd + Copy>(moves: Vec<u64>, mut score: impl FnMut(u64) -> 
 
 // ---------- Lv.3: MinimaxAI ----------
 
-/// 深さ `depth` のミニマックスで最高点の手の一覧を返す（Python 版はこの中からランダムに選ぶ）。
+/// Best moves of a depth-`depth` minimax (Python picks one at random).
 pub fn minimax_best_moves(black: u64, white: u64, color: i8, depth: i32) -> Vec<u64> {
     let me = color;
     let evaluate = |b: u64, w: u64| -> i32 {
@@ -197,7 +197,7 @@ enum Kind {
     Upper,
 }
 
-/// `alphabeta_ai.py` の AlphaBetaAI（既定の重み表と係数）
+/// AlphaBetaAI from `alphabeta_ai.py` (default weights and coefficients)
 pub struct AlphaBeta {
     color: i8,
     depth: i32,
@@ -250,7 +250,7 @@ impl AlphaBeta {
         position * c[0] + mobility * c[1] + disc * c[2]
     }
 
-    /// 重みの高い順（同じ重みはマスの番号順のまま）
+    /// Highest weight first (equal weights keep square order)
     fn ordered(moves: Vec<u64>) -> Vec<u64> {
         let mut moves = moves;
         moves.sort_by(|a, b| {
@@ -261,7 +261,7 @@ impl AlphaBeta {
         moves
     }
 
-    /// 最善手（打てなければ 0）
+    /// Best move (0 if there is none)
     pub fn get_move(&mut self, black: u64, white: u64) -> u64 {
         self.tt.clear();
         self.nodes = 0;
@@ -285,7 +285,7 @@ impl AlphaBeta {
         best
     }
 
-    /// 打てる手それぞれの評価値（全幅窓で読む）を、評価値の高い順に返す
+    /// Score of every legal move (full-window search), best first
     pub fn analyze(&mut self, black: u64, white: u64) -> Vec<(u64, f64)> {
         self.tt.clear();
         self.nodes = 0;
@@ -303,7 +303,7 @@ impl AlphaBeta {
             );
             results.push((x, score));
         }
-        // 安定ソートなので、同点の手は読んだ順のまま（Python の sort(reverse=True) と同じ）
+        // stable sort keeps equal scores in search order (like Python's sort(reverse=True))
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         results
     }
@@ -408,8 +408,8 @@ mod tests {
 
     #[test]
     fn best_move_lists_are_nonempty_and_legal() {
-        // 対称な開始局面でも、小数の足し算の順番で点数がわずかに違い、同点にならないことがある
-        // （Python 版も同じ。一致は tests/test_rust_engine.py で確認）
+        // even in the symmetric start position the float sums can differ slightly, so not all moves tie
+        // (Python behaves the same; agreement is checked in tests/test_rust_web_port.py)
         let (b, w) = START;
         let best = weighted_best_moves(b, w, 1);
         assert!(!best.is_empty() && best.len() <= 4);
@@ -418,8 +418,8 @@ mod tests {
 
     #[test]
     fn alphabeta_scores_finished_game_by_result() {
-        // 両者とも打てない局面は、評価関数ではなく勝敗（石差）で評価する
-        let black = 1u64 << 9; // 黒が b2 に1つだけ
+        // a position where neither side can move is scored by the result (disc difference)
+        let black = 1u64 << 9; // a single black disc on b2
         let white = 0u64;
         let ab = AlphaBeta::new(1, 3);
         assert_eq!(ab.final_score(black, white), WIN_SCORE + 1.0);
