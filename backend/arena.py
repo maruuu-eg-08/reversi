@@ -8,6 +8,7 @@
     python arena.py lv5:0.3 lv5:0.3:coeffs=tuned.txt -n 200
     python arena.py lv5:0.3 lv5:0.3:book=off -n 200        # 定石あり vs なし
     python arena.py lv5:0.3 lv5:0.3:engine=python -n 100   # Rust 版 vs Python 版（同じ時間）
+    python arena.py lv5:0.3:patterns=../data/pattern_weights.bin lv5:0.3 -n 200   # パターン評価 vs 線形評価
 """
 
 import argparse
@@ -24,6 +25,7 @@ def make_player(spec, color):
 
     Lv.5 は既定で同梱の定石を使う。'book=off' で使わない、'book=path' で別の定石ファイルを使う。
     'engine=python' / 'engine=rust' で探索の実装を選ぶ（既定は Rust 版があれば Rust 版）。
+    'patterns=path' で葉の評価にパターン評価（train_patterns.py で学習した重み）を使う。
     """
     parts = spec.split(":")
     level = parts[0].removeprefix("lv")
@@ -53,7 +55,8 @@ def make_player(spec, color):
         else:
             book = OpeningBook.load(book_opt)
         engine = opts.get("engine", "auto")
-        return StrongAI(color, time_limit=t, max_depth=d, eval_coeffs=coeffs, book=book, engine=engine)
+        patterns = opts.get("patterns")
+        return StrongAI(color, time_limit=t, max_depth=d, eval_coeffs=coeffs, book=book, engine=engine, patterns=patterns)
     depth = int(positional[0]) if positional else 4
     return create_ai(level, color, depth=depth)
 

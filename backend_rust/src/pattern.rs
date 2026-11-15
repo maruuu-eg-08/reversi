@@ -38,12 +38,21 @@ pub struct Instance {
     pub squares: Vec<u8>,
 }
 
+/// インスタンスの最大数（評価のときに番号を並べる固定長の配列の大きさ）
+pub const MAX_INSTANCES: usize = 96;
+
 /// 定義から決まる表の大きさなどの情報
 pub struct Layout {
     pub instances: Vec<Instance>,
     pub family_sizes: Vec<usize>,
     pub family_offsets: Vec<usize>,
     pub table_size: usize,
+    /// インスタンスごとの、表の中での開始位置（そのインスタンスのパターンの位置）
+    instance_offsets: Vec<u32>,
+    /// マスごとの (インスタンス番号, そのマスの桁の重み 3^k) の一覧を並べたもの。
+    /// マス s の分は `by_square[square_start[s]..square_start[s + 1]]`
+    by_square: Vec<(u8, u32)>,
+    square_start: [usize; 65],
 }
 
 fn parse_square(name: &str) -> u8 {
@@ -89,7 +98,7 @@ pub fn layout() -> &'static Layout {
                 }
             }
         }
-        let family_offsets = family_sizes
+        let family_offsets: Vec<usize> = family_sizes
             .iter()
             .scan(0, |acc, &n| {
                 let start = *acc;
@@ -98,11 +107,31 @@ pub fn layout() -> &'static Layout {
             })
             .collect();
         let table_size = family_sizes.iter().sum();
+        let instance_offsets = instances
+            .iter()
+            .map(|inst| family_offsets[inst.family] as u32)
+            .collect();
+        // マスから「そのマスを含むインスタンスと桁」を引けるようにしておく（評価の高速化用）
+        let mut by_square = Vec::new();
+        let mut square_start = [0usize; 65];
+        for sq in 0..64u8 {
+            square_start[sq as usize] = by_square.len();
+            for (n, inst) in instances.iter().enumerate() {
+                if let Some(k) = inst.squares.iter().position(|&x| x == sq) {
+                    by_square.push((n as u8, 3u32.pow(k as u32)));
+                }
+            }
+        }
+        square_start[64] = by_square.len();
+        assert!(instances.len() <= MAX_INSTANCES);
         Layout {
             instances,
             family_sizes,
             family_offsets,
             table_size,
+            instance_offsets,
+            by_square,
+            square_start,
         }
     })
 }
@@ -159,15 +188,27 @@ impl PatternWeights {
     }
 
     /// 手番側 `p` から見た評価値の整数部分（1/SCALE 石単位）。`my_moves` / `opp_moves` は両者の合法手。
+    ///
+    /// 石のあるマスだけを見て、そのマスを含むインスタンスの番号に桁の値を足していく
+    /// （`index_of` で全インスタンスの全マスを見るより速い。番号は同じになる）。
     #[inline]
     pub fn evaluate_raw(&self, p: u64, o: u64, my_moves: u64, opp_moves: u64) -> i32 {
         let lay = layout();
         let stage = &self.stages[stage_of((!(p | o)).count_ones())];
+        let mut idx = [0u32; MAX_INSTANCES];
+        let mut occupied = p | o;
+        while occupied != 0 {
+            let sq = occupied.trailing_zeros() as usize;
+            occupied &= occupied - 1;
+            let digit = if (p >> sq) & 1 != 0 { 1 } else { 2 };
+            for &(n, pow) in &lay.by_square[lay.square_start[sq]..lay.square_start[sq + 1]] {
+                idx[n as usize] += digit * pow;
+            }
+        }
         let mobility = my_moves.count_ones() as i32 - opp_moves.count_ones() as i32;
         let mut total = stage.bias + stage.mobility * mobility;
-        for inst in &lay.instances {
-            let idx = index_of(p, o, &inst.squares) as usize;
-            total += i32::from(stage.table[lay.family_offsets[inst.family] + idx]);
+        for (n, &offset) in lay.instance_offsets.iter().enumerate() {
+            total += i32::from(stage.table[(offset + idx[n]) as usize]);
         }
         total
     }
@@ -288,6 +329,36 @@ mod tests {
             s.sort();
             s.dedup();
             assert_eq!(s.len(), inst.squares.len());
+        }
+    }
+
+    #[test]
+    fn fast_evaluation_matches_simple_index_computation() {
+        // 速い方法（石のあるマスから足す）と、素直な方法（index_of）で同じ評価値になる
+        let lay = layout();
+        let mut w = PatternWeights::zeros();
+        let mut r = crate::selfplay::Rng::new(9);
+        for st in &mut w.stages {
+            for v in st.table.iter_mut() {
+                *v = r.below(2001) as i16 - 1000;
+            }
+        }
+        for _ in 0..500 {
+            let p = r.next_u64() & r.next_u64();
+            let o = r.next_u64() & !p;
+            let stage = &w.stages[stage_of((!(p | o)).count_ones())];
+            let simple: i32 = lay
+                .instances
+                .iter()
+                .map(|inst| {
+                    i32::from(
+                        stage.table[lay.family_offsets[inst.family]
+                            + index_of(p, o, &inst.squares) as usize],
+                    )
+                })
+                .sum::<i32>()
+                + stage.bias;
+            assert_eq!(w.evaluate_raw(p, o, 0, 0), simple);
         }
     }
 
