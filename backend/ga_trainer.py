@@ -1,24 +1,19 @@
-import numpy as np
 import random as rd
+from pathlib import Path
+
+import numpy as np
+
 from ai_manager import create_ai
 from bitboard import BitBoard as Board
+from weights import POSITION_WEIGHTS
 
 population_size = 30  # 🌟 計算量削減のため少し減らします
 generations = 100
 mutation_rate = 0.1
 elite_count = 3
 
-# 🌟 今回は盤面の重みは固定にするので、以前の最強重みを読み込む（または定義する）
-best_weights_64 = np.array([
-    27.87, 10.59, 27.35, 15.77, 15.77, 27.35, 10.59, 27.87,
-    10.59,  4.51, 33.77,-25.49,-25.49, 33.77,  4.51, 10.59,
-    27.35, 33.77,  0.61, -6.42, -6.42,  0.61, 33.77, 27.35,
-    15.77,-25.49, -6.42, 25.08, 25.08, -6.42,-25.49, 15.77,
-    15.77,-25.49, -6.42, 25.08, 25.08, -6.42,-25.49, 15.77,
-    27.35, 33.77,  0.61, -6.42, -6.42,  0.61, 33.77, 27.35,
-    10.59,  4.51, 33.77,-25.49,-25.49, 33.77,  4.51, 10.59,
-    27.87, 10.59, 27.35, 15.77, 15.77, 27.35, 10.59, 27.87
-])
+# 盤面の重みは固定（weights.py の POSITION_WEIGHTS）にして、評価係数だけを学習する
+best_weights_64 = np.array(POSITION_WEIGHTS)
 
 # 🌟 初期集団の生成（今回は9つの係数）
 def init_population():
@@ -129,28 +124,35 @@ def select_parent(population_coeffs, fitness_score, k=5): # 🌟 kを少し減�
     return population_coeffs[best_ix]
 
 
-# === メイン処理 ===
-population_coeffs = init_population()
+def main():
+    population_coeffs = init_population()
 
-for gen in range(generations):
-    scores = get_fitness(population_coeffs)
-    best_idx = np.argmax(scores)
-    avg_score = np.mean(scores)
-    max_score = scores[best_idx]
-    
-    print(f"第 {gen:2} 世代 | 最高: {max_score:6.2f} | 平均: {avg_score:6.2f}")
-    
-    # 最強の係数を表示して、AIがどう学習しているか観察する！
-    best_c = population_coeffs[best_idx]
-    print(f"  [序盤] Pos: {best_c[0]:.2f}, Mob: {best_c[1]:.2f}, Disc: {best_c[2]:.2f}")
-    print(f"  [中盤] Pos: {best_c[3]:.2f}, Mob: {best_c[4]:.2f}, Disc: {best_c[5]:.2f}")
-    print(f"  [終盤] Pos: {best_c[6]:.2f}, Mob: {best_c[7]:.2f}, Disc: {best_c[8]:.2f}")
+    for gen in range(generations):
+        scores = get_fitness(population_coeffs)
+        best_idx = np.argmax(scores)
+        avg_score = np.mean(scores)
+        max_score = scores[best_idx]
 
-    population_coeffs = evolve(population_coeffs, scores)
+        print(f"第 {gen:2} 世代 | 最高: {max_score:6.2f} | 平均: {avg_score:6.2f}")
 
-# 最終世代の保存
-best_idx = np.argmax(scores)
-best_final = population_coeffs[best_idx]
-np.savetxt("best_eval_coeffs.txt", best_final)
-print("\n=== 学習完了！最強の係数 ===")
-print(best_final)
+        # 最強の係数を表示して、AIがどう学習しているか観察する！
+        best_c = population_coeffs[best_idx]
+        print(f"  [序盤] Pos: {best_c[0]:.2f}, Mob: {best_c[1]:.2f}, Disc: {best_c[2]:.2f}")
+        print(f"  [中盤] Pos: {best_c[3]:.2f}, Mob: {best_c[4]:.2f}, Disc: {best_c[5]:.2f}")
+        print(f"  [終盤] Pos: {best_c[6]:.2f}, Mob: {best_c[7]:.2f}, Disc: {best_c[8]:.2f}")
+
+        population_coeffs = evolve(population_coeffs, scores)
+
+    # 最終世代の保存
+    # 注意: ループ末尾で evolve() 済みなので、scores と population_coeffs の世代がずれている。
+    # 最後に評価した世代の最強個体 best_c を保存する。
+    best_final = best_c
+    out_path = Path(__file__).with_name("best_eval_coeffs.txt")
+    np.savetxt(out_path, best_final)
+    print(f"保存先: {out_path}")
+    print("\n=== 学習完了！最強の係数 ===")
+    print(best_final)
+
+
+if __name__ == "__main__":
+    main()
