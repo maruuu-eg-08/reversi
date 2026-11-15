@@ -31,6 +31,14 @@
             <p id="loading-text">読み込み中…</p>
           </div>
         </div>
+        <div class="board-toolbar">
+          <label class="toggle">
+            <input id="show-eval" type="checkbox" role="switch" checked />
+            <span class="toggle-track" aria-hidden="true"></span>
+            <span>打てるマスに評価値を表示</span>
+          </label>
+          <span class="hint">対局中いつでも切り替えられます（キー: E）</span>
+        </div>
       </section>
 
       <aside class="panel">
@@ -88,7 +96,7 @@
             </label>
           </div>
           <p class="hint">
-            あなたの番で、打てる各マスを同じ深さで読んだ評価値を表示します。<span class="swatch good"></span>良い〜<span class="swatch bad"></span>悪い
+            あなたの番で、打てる各マスを同じ深さで読んだ評価値の上位5手を表示します。盤面の色は<span class="swatch good"></span>良い〜<span class="swatch bad"></span>悪い
           </p>
           <ol id="analysis-list" class="analysis-list"></ol>
           <dl class="stats">

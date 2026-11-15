@@ -12,6 +12,7 @@ const levelSel = $<HTMLSelectElement>("level");
 const depthInput = $<HTMLInputElement>("depth");
 const depthValue = $<HTMLOutputElement>("depth-value");
 const showAnalysisInput = $<HTMLInputElement>("show-analysis");
+const showEvalInput = $<HTMLInputElement>("show-eval");
 const analysisList = $<HTMLOListElement>("analysis-list");
 
 const COLS = "abcdefgh";
@@ -29,6 +30,32 @@ let lastMove: Move | null = null;
 let analysis: Analysis | null = null;
 
 const engine = new Engine((message) => (loadingText.textContent = message));
+
+// ---------- 表示設定（ブラウザに保存。保存できない環境でも動くようにする） ----------
+const PREFS_KEY = "reversi-prefs";
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Record<string, unknown>;
+    if (typeof p.showEval === "boolean") showEvalInput.checked = p.showEval;
+    if (typeof p.showAnalysis === "boolean") showAnalysisInput.checked = p.showAnalysis;
+  } catch {
+    // 既定値のまま
+  }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ showEval: showEvalInput.checked, showAnalysis: showAnalysisInput.checked }),
+    );
+  } catch {
+    // 保存できなくても表示は切り替わる
+  }
+}
+loadPrefs();
+
+// 盤面の数字か読み筋リストのどちらかを表示するなら、分析が必要
+const wantAnalysis = () => showEvalInput.checked || showAnalysisInput.checked;
 
 // ---------- 盤面の生成 ----------
 const cells: HTMLButtonElement[] = [];
@@ -73,7 +100,7 @@ function render(animate = false) {
   const humanTurn = s.color === humanColor && !busy;
   const scores = new Map<number, MoveScore>();
   let distinct: number[] = [];
-  if (analysis && showAnalysisInput.checked && humanTurn) {
+  if (analysis && showEvalInput.checked && humanTurn) {
     analysis.moves.forEach((m) => scores.set(m.row * 8 + m.col, m));
     distinct = [...new Set(analysis.moves.map((m) => m.score))]; // 降順に並んでいる
   }
@@ -229,7 +256,7 @@ async function advance(id: number) {
     setStatus(`あなた（${colorName(humanColor)}）の番です`);
     analysis = null;
     render();
-    if (showAnalysisInput.checked) void requestAnalysis(id);
+    if (wantAnalysis()) void requestAnalysis(id);
     return;
   }
 }
@@ -277,15 +304,27 @@ depthInput.addEventListener("input", () => {
   depthValue.textContent = depthInput.value;
 });
 depthInput.addEventListener("change", () => {
-  if (state && state.color === humanColor && !busy && showAnalysisInput.checked) {
+  if (state && state.color === humanColor && !busy && wantAnalysis()) {
     analysis = null;
     render();
     void requestAnalysis(gameId);
   }
 });
-showAnalysisInput.addEventListener("change", () => {
+function onDisplayToggle() {
+  savePrefs();
   render();
-  if (showAnalysisInput.checked && !analysis) void requestAnalysis(gameId);
+  if (wantAnalysis() && !analysis) void requestAnalysis(gameId);
+}
+showEvalInput.addEventListener("change", onDisplayToggle);
+showAnalysisInput.addEventListener("change", onDisplayToggle);
+// E キーで盤面の評価値を切り替える（入力欄の操作中は除く）
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "e" && e.key !== "E") return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA") && t !== showEvalInput) return;
+  showEvalInput.checked = !showEvalInput.checked;
+  onDisplayToggle();
 });
 
 // ---------- 起動 ----------
