@@ -127,6 +127,19 @@ README (#17) are done.
 - The repository About section was updated (description, homepage link to the game, topics:
   rust, webassembly, game-ai, othello, reversi, machine-learning).
 
+## Subagents (`.claude/agents/`, PR #20, added 2026-11-18)
+
+Chosen by the user from their own role list (rules-tester became test-runner; readme-writer skipped;
+ai-researcher to be added when starting the next improvement):
+- `code-reviewer` (Read/Grep/Glob only): review changes against the project rules; give it the changed files.
+- `test-runner`: runs every check (ruff, pytest with/without Rust, cargo fmt/clippy native+wasm, cargo test,
+  frontend build + smoke test) and reports; does not fix.
+- `ai-benchmarker`: arena.py matches (colors swapped, 95% CI) and speed; refuses to start while another heavy
+  job is running.
+`.gitignore` tracks `.claude/agents/` only. Agent files are in English.
+Subagents start without this conversation's context and cost more than doing small things directly, so use
+them for repeated, well-defined jobs (full checks before a PR, reviews, benchmarks).
+
 ## Current work (2026-11-18): options A + C, chosen by the user
 
 Decisions by the user on 2026-11-18:
