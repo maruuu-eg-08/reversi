@@ -157,6 +157,12 @@ Progress (branch `selfplay-pattern-eval`):
 - Generating `data/selfplay-gen2-200k.bin` (200k games, `--patterns auto --seed 1`, log `data/gen2-200k.log`,
   ~2 h). If interrupted, rerun the same command to resume:
   `python -u gen_data.py --games 200000 --patterns auto --seed 1 --batch 2000 --out ../data/selfplay-gen2-200k.bin`
+- **Handoff to a new chat (2026-11-18 ~17:40):** the generation was started from the previous chat and keeps
+  running in the background (`caffeinate -w <pid>` keeps the Mac awake until it ends). Check with
+  `tail -1 data/gen2-200k.log` and `ps aux | grep gen_data`. If it is not running and the log does not show
+  200000/200000, rerun the resume command above (the file resumes where it stopped).
+- A review of PR #19 with the `code-reviewer` subagent was started but not finished; run it again in the new chat
+  (the subagents are loaded only when a chat starts).
 - `docs/DESIGN.md` first version written (design, results table, limitations, interview Q&A). Its
   "Iterating the loop" section must be updated with the gen-2 results.
 - Next: train (a) gen-2 only and (b) gen-1 + gen-2, compare each with the current weights in arena
