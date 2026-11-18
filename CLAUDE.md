@@ -114,6 +114,7 @@ data/             training data (gitignored, large)
 | #15 | Step 5: opening book rebuilt with pattern evaluation | new vs old book 53.0% (not significant), merged by user's choice; main line = Tiger -> Aubrey |
 | #16 | Web version on Rust/WebAssembly, Pyodide removed | wasm 145 KB, 9-11 plies/s in the browser, Node smoke test in CI, new vs old web 49-0-1 |
 | #17 | Everything translated to English; README redesigned with screenshots and charts | English UI, opening names in English, past PR titles/descriptions translated |
+| #20 | Claude Code subagents (code-reviewer, test-runner, ai-benchmarker) | merged 2026-11-18 with the user's OK |
 
 ## Current status
 
@@ -127,7 +128,7 @@ README (#17) are done.
 - The repository About section was updated (description, homepage link to the game, topics:
   rust, webassembly, game-ai, othello, reversi, machine-learning).
 
-## Subagents (`.claude/agents/`, PR #20, added 2026-11-18)
+## Subagents (`.claude/agents/`, PR #20, merged 2026-11-18)
 
 Chosen by the user from their own role list (rules-tester became test-runner; readme-writer skipped;
 ai-researcher to be added when starting the next improvement):
