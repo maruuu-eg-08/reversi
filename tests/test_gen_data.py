@@ -50,6 +50,38 @@ def test_resume_rejects_different_settings(tmp_path):
     assert os.path.getsize(path) > RECORD_SIZE
 
 
+def test_pattern_evaluation_self_play(tmp_path):
+    a = generate(str(tmp_path / "a.bin"), log=quiet, patterns="auto", **SMALL)
+    b = generate(str(tmp_path / "b.bin"), log=quiet, patterns="auto", **{**SMALL, "threads": 1, "batch": 8})
+    linear = generate(str(tmp_path / "l.bin"), log=quiet, **SMALL)
+    assert open(a, "rb").read() == open(b, "rb").read()
+    params, records = read_records(a)
+    assert len(params["patterns_sha256"]) == 64
+    assert "patterns_sha256" not in read_records(linear)[0]
+    assert records != read_records(linear)[1]
+    # the weights are part of the settings, so resuming with the linear evaluation is refused
+    with pytest.raises(SystemExit):
+        generate(a, log=quiet, **SMALL)
+
+
+def test_resume_refuses_other_pattern_weights(tmp_path):
+    from strong_ai import DEFAULT_PATTERNS
+
+    other = tmp_path / "other.bin"
+    data = bytearray(open(DEFAULT_PATTERNS, "rb").read())
+    data[-1] ^= 1  # change one weight
+    other.write_bytes(bytes(data))
+    full = generate(str(tmp_path / "full.bin"), log=quiet, patterns="auto", **SMALL)
+    part = str(tmp_path / "part.bin")
+    full_data = open(full, "rb").read()
+    with open(part, "wb") as f:
+        f.write(full_data[: len(full_data) // 2])
+    with pytest.raises(SystemExit):
+        generate(part, log=quiet, patterns=str(other), **SMALL)
+    generate(part, log=quiet, patterns="auto", **SMALL)  # the same weights resume
+    assert open(part, "rb").read() == full_data
+
+
 def test_training_produces_weights_that_python_and_rust_agree_on(tmp_path):
     import reversi_engine
 
@@ -67,3 +99,17 @@ def test_training_produces_weights_that_python_and_rust_agree_on(tmp_path):
     _, records = read_records(data)
     for P, O, *_ in records[::7]:
         assert rust.evaluate(P, O) == w.evaluate(P, O, legal_moves(P, O), legal_moves(O, P))
+
+
+def test_training_combines_several_data_files(tmp_path):
+    from train_patterns import train
+
+    a = generate(str(tmp_path / "a.bin"), log=quiet, **{**SMALL, "games": 20})
+    b = generate(str(tmp_path / "b.bin"), log=quiet, **{**SMALL, "games": 20, "seed": 4})
+    one = train(a, str(tmp_path / "one.bin"), lam=1.0, max_iter=5, valid_every=4, threads=2)
+    both = train([a, b], str(tmp_path / "both.bin"), lam=1.0, max_iter=5, valid_every=4, threads=2)
+    n = lambda reports: sum(r["n_train"] + r["n_valid"] for r in reports)  # noqa: E731
+    assert n(both) == n(one) + len(read_records(b)[1])
+    # game numbers overlap between the files; each file is split by its own game numbers
+    n_valid = lambda reports: sum(r["n_valid"] for r in reports)  # noqa: E731
+    assert n_valid(both) == n_valid(one) + sum(r[4] % 4 == 0 for r in read_records(b)[1])

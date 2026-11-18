@@ -1,7 +1,7 @@
 """Measure strength by AI-vs-AI matches (in parallel).
 
 Each random opening (a few random moves from the start) is played twice with colors swapped,
-cancelling out first-move advantage and opening luck. Win rates come with a 95% confidence interval.
+canceling out first-move advantage and opening luck. Win rates come with a 95% confidence interval.
 
 Examples:
     python arena.py lv5:0.3 lv4 -n 100
