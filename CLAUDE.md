@@ -127,6 +127,8 @@ README (#17), the second round of self-play with docs/DESIGN.md (#19) and subage
   ~2 h 15 min at ~24 games/s). Round-1 weights are kept as `data/pw-l30.bin`; candidates `data/pw-gen2.bin`
   (round-2 data only) and `data/pw-gen12.bin` (adopted). Arena log: `data/arena-gen2.log`.
 - Weights: `backend/pattern_weights.bin` = round 1 + round 2 data, λ = 30 (commit adopted versions only).
+  Deployed to GitHub Pages on 2026-11-18 (#19); the live `engine/pattern_weights.bin` SHA-256 matched and a
+  game was played in the browser.
 - The opening book was NOT rebuilt with the round-2 weights (earlier rebuilds were not significant).
 - The web Lv.5 uses Rust (wasm) + pattern evaluation + opening book. Lv.1-4 are Rust ports identical to Python.
 - README chart `docs/images/head-to-head.png` is drawn by a small matplotlib script (not in the repo; same style:
