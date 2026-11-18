@@ -139,12 +139,14 @@ README (#17), the second round of self-play with docs/DESIGN.md (#19) and subage
 ## Subagents (`.claude/agents/`, PR #20, merged 2026-11-18)
 
 Chosen by the user from their own role list (rules-tester became test-runner; readme-writer skipped;
-ai-researcher to be added when starting the next improvement):
+ai-researcher added afterwards):
 - `code-reviewer` (Read/Grep/Glob only): review changes against the project rules; give it the changed files.
 - `test-runner`: runs every check (ruff, pytest with/without Rust, cargo fmt/clippy native+wasm, cargo test,
   frontend build + smoke test) and reports; does not fix.
 - `ai-benchmarker`: arena.py matches (colors swapped, 95% CI) and speed; refuses to start while another heavy
   job is running.
+- `ai-researcher` (Read/Grep/Glob/WebSearch/WebFetch, added for the 2026-11-19 plan): researches techniques and
+  proposes a plan that fits the codebase; never edits. Use it at the start of B.
 `.gitignore` tracks `.claude/agents/` only. Agent files are in English.
 Subagents start without this conversation's context and cost more than doing small things directly, so use
 them for repeated, well-defined jobs (full checks before a PR, reviews, benchmarks).
@@ -154,6 +156,8 @@ them for repeated, well-defined jobs (full checks before a PR, reviews, benchmar
 Order: **B (faster search) -> round 3 of self-play with the faster engine -> interview practice while it runs**.
 Start the day by confirming the plan with the user, then go.
 
+0. **Research** (`ai-researcher`): incremental pattern evaluation and endgame-solver techniques; agree the design
+   with the user.
 1. **Baseline first** (`ai-benchmarker`): nodes/s, seconds and completed depth at fixed depths 8 and 10 on fixed
    random positions, and the depth Lv.5 reaches in 0.3 s / 1 s. Save the numbers for the README.
 2. **B-1 incremental pattern evaluation** (Rust and Python): update only the pattern instances that contain the
