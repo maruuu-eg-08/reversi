@@ -149,12 +149,34 @@ ai-researcher to be added when starting the next improvement):
 Subagents start without this conversation's context and cost more than doing small things directly, so use
 them for repeated, well-defined jobs (full checks before a PR, reviews, benchmarks).
 
-## Next options (not decided)
+## Plan for 2026-11-19 (decided by the user on 2026-11-18)
 
-- B. Faster search: incremental pattern updates and a dedicated endgame solver (about half a day).
-- Round 3 of self-play with the round-2 weights (~2.5 h compute), and/or rebuild the opening book.
-- D. Neural-network evaluation on the existing 400k games.
-- Open nice-to-have review items for #19: `load_patterns` cache keyed by path only, clean error for a missing
-  `--patterns` file, paired-variance CI in arena.py.
+Order: **B (faster search) -> round 3 of self-play with the faster engine -> interview practice while it runs**.
+Start the day by confirming the plan with the user, then go.
+
+1. **Baseline first** (`ai-benchmarker`): nodes/s, seconds and completed depth at fixed depths 8 and 10 on fixed
+   random positions, and the depth Lv.5 reaches in 0.3 s / 1 s. Save the numbers for the README.
+2. **B-1 incremental pattern evaluation** (Rust and Python): update only the pattern instances that contain the
+   placed or flipped squares instead of recomputing all 84. Values must stay identical, so
+   `tests/test_rust_engine.py` / `tests/test_rust_web_port.py` keep passing with the same moves, scores and node
+   counts. Also used by the wasm build.
+3. **B-2 dedicated endgame solver**: in the last few empty squares, a specialized search without evaluation calls
+   (parity / fastest-first ordering, no transposition table at the very end). The search procedure changes, so
+   implement it in Python too and keep the equality tests passing.
+4. After each step: `test-runner` (all checks), then `ai-benchmarker` (speed vs baseline; arena 200 openings =
+   400 games vs the current engine at 0.3 s); `code-reviewer` before the PR.
+5. **Round 3 of self-play** with the faster engine and the round-2 weights:
+   `gen_data.py --games 200000 --patterns auto --seed 2 --out ../data/selfplay-gen3-200k.bin` (round 2 took
+   2 h 15 min; expected shorter). Keep the Mac awake (`caffeinate -i -w <pid>`). No benchmarks or arena while it runs.
+6. **Interview practice during the generation**: go through docs/DESIGN.md in Japanese, then answer the interview
+   questions in English.
+7. Retrain candidates (round 3 only; rounds 1+2+3; maybe 2+3), arena each vs the round-2 weights (400 games),
+   adopt the best if stronger; update README (results table, chart, speed table), DESIGN.md, CLAUDE.md; deploy and
+   check the live page.
+
+Delegation (same rule as 2026-11-18): **merge and publish without asking if the change is stronger at all**
+(arena 95% CI above 50%), or for B if it is faster with identical results. Otherwise report and ask.
+Later options: D (neural-network evaluation), rebuilding the opening book, the open #19 nice-to-have items
+(`load_patterns` cache keyed by path only, clean error for a missing `--patterns` file, paired-variance CI in arena.py).
 - Note: two chats worked on the same checkout on 2026-11-18 (a second chat committed review fixes on the
   branch). Before editing, check `git log` / `git status` for commits from another chat.
