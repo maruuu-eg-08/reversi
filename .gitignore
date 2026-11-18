@@ -10,7 +10,8 @@ node_modules/
 dist/
 *.png
 !docs/**/*.png
-.claude/
+.claude/*
+!.claude/agents/
 
 # partial results of build_book.py
 *.cache
