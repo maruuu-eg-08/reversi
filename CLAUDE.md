@@ -114,17 +114,23 @@ data/             training data (gitignored, large)
 | #15 | Step 5: opening book rebuilt with pattern evaluation | new vs old book 53.0% (not significant), merged by user's choice; main line = Tiger -> Aubrey |
 | #16 | Web version on Rust/WebAssembly, Pyodide removed | wasm 145 KB, 9-11 plies/s in the browser, Node smoke test in CI, new vs old web 49-0-1 |
 | #17 | Everything translated to English; README redesigned with screenshots and charts | English UI, opening names in English, past PR titles/descriptions translated |
+| #19 | Learning loop round 2 (self-play with pattern eval, retrain on old+new data) + docs/DESIGN.md | **round 2 vs round 1 333-58-9 (84.4%, CI 80.8-87.9%)**; new data only 79.2% |
 | #20 | Claude Code subagents (code-reviewer, test-runner, ai-benchmarker) | merged 2026-11-18 with the user's OK |
 
 ## Current status
 
-Pattern evaluation (#10-#15), the WebAssembly web version (#16) and the English translation with the new
-README (#17) are done.
+Pattern evaluation (#10-#15), the WebAssembly web version (#16), the English translation with the new
+README (#17), the second round of self-play with docs/DESIGN.md (#19) and subagents (#20) are done.
 
-- Training data: `data/selfplay-200k.bin` (200k games, gitignored). Weights: `backend/pattern_weights.bin`
-  (λ = 30; commit adopted versions only).
+- Training data (gitignored): `data/selfplay-200k.bin` (round 1, linear eval, seed 0) and
+  `data/selfplay-gen2-200k.bin` (round 2, `--patterns auto` with round-1 weights, seed 1; 11.95 M positions,
+  ~2 h 15 min at ~24 games/s). Round-1 weights are kept as `data/pw-l30.bin`; candidates `data/pw-gen2.bin`
+  (round-2 data only) and `data/pw-gen12.bin` (adopted). Arena log: `data/arena-gen2.log`.
+- Weights: `backend/pattern_weights.bin` = round 1 + round 2 data, λ = 30 (commit adopted versions only).
+- The opening book was NOT rebuilt with the round-2 weights (earlier rebuilds were not significant).
 - The web Lv.5 uses Rust (wasm) + pattern evaluation + opening book. Lv.1-4 are Rust ports identical to Python.
-
+- README chart `docs/images/head-to-head.png` is drawn by a small matplotlib script (not in the repo; same style:
+  horizontal bars + 95% CI, background #fcfcfb, bar #2a78d6). `r2-by-stage.png` still shows round 1.
 - The repository About section was updated (description, homepage link to the game, topics:
   rust, webassembly, game-ai, othello, reversi, machine-learning).
 
@@ -141,34 +147,12 @@ ai-researcher to be added when starting the next improvement):
 Subagents start without this conversation's context and cost more than doing small things directly, so use
 them for repeated, well-defined jobs (full checks before a PR, reviews, benchmarks).
 
-## Current work (2026-11-18): options A + C, chosen by the user
+## Next options (not decided)
 
-Decisions by the user on 2026-11-18:
-- Do A (iterate the learning loop) and C (technical write-up) in parallel.
-- `docs/DESIGN.md` is in English; the chat stays in Japanese.
-- **If the new weights are stronger at all, merge and publish without asking** (delegated for this work).
-- **Update CLAUDE.md whenever anything changes, even slightly.**
-
-Progress (branch `selfplay-pattern-eval`):
-- `gen_data.py --patterns auto|<file>`: self-play searching with pattern evaluation (Rust `selfplay::play_games`
-  takes optional pattern weights; the weights' SHA-256 goes into the header). ~25-31 games/s on 8 cores
-  (linear: ~57).
-- `train_patterns.py --data a.bin b.bin ...`: train on several files combined.
-- Generating `data/selfplay-gen2-200k.bin` (200k games, `--patterns auto --seed 1`, log `data/gen2-200k.log`,
-  ~2 h). If interrupted, rerun the same command to resume:
-  `python -u gen_data.py --games 200000 --patterns auto --seed 1 --batch 2000 --out ../data/selfplay-gen2-200k.bin`
-- **Handoff to a new chat (2026-11-18 ~17:40):** the generation was started from the previous chat and keeps
-  running in the background (`caffeinate -w <pid>` keeps the Mac awake until it ends). Check with
-  `tail -1 data/gen2-200k.log` and `ps aux | grep gen_data`. If it is not running and the log does not show
-  200000/200000, rerun the resume command above (the file resumes where it stopped).
-- PR #19 reviewed by `code-reviewer` (2026-11-18): no blockers. The three must-fix items are fixed: American
-  spelling (labeled, canceling), games + 95% CI for every strength claim in DESIGN.md, and `train_patterns.py`
-  records data file basenames (no local paths). Nice-to-have items left open: Rust `load_patterns` cache keyed by
-  path only (stale after retraining in one process), stronger hash test, DESIGN.md wording (arena parallelism,
-  count of configurations, λ chosen on the R² holdout), clean error for a missing `--patterns` file, one weights
-  JSON file name.
-- `docs/DESIGN.md` first version written (design, results table, limitations, interview Q&A). Its
-  "Iterating the loop" section must be updated with the gen-2 results.
-- Next: train (a) gen-2 only and (b) gen-1 + gen-2, compare each with the current weights in arena
-  (`lv5:0.3:patterns=<new>` vs `lv5:0.3`, 200 openings = 400 games), adopt the best if stronger; then
-  rebuild the opening book? (only if cheap; book rebuild ~2 min), update README, wasm assets, deploy.
+- B. Faster search: incremental pattern updates and a dedicated endgame solver (about half a day).
+- Round 3 of self-play with the round-2 weights (~2.5 h compute), and/or rebuild the opening book.
+- D. Neural-network evaluation on the existing 400k games.
+- Open nice-to-have review items for #19: `load_patterns` cache keyed by path only, clean error for a missing
+  `--patterns` file, paired-variance CI in arena.py.
+- Note: two chats worked on the same checkout on 2026-11-18 (a second chat committed review fixes on the
+  branch). Before editing, check `git log` / `git status` for commits from another chat.

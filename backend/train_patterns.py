@@ -26,7 +26,7 @@ def train(data, out, lam=30.0, max_iter=300, tol=1e-6, valid_every=10, threads=N
     """data: the path of a self-play data file, or a list of paths."""
     if _native is None:
         raise SystemExit("the Rust engine is required: pip install ./backend_rust")
-    data = [data] if isinstance(data, str) else list(data)
+    data = [os.fspath(data)] if isinstance(data, (str, os.PathLike)) else [os.fspath(d) for d in data]
     reports = _native.train_patterns(
         data, out, lam, max_iter, tol, valid_every, threads or os.cpu_count() or 1,
         list(STRONG_EVAL_COEFFS), list(POSITION_WEIGHTS),

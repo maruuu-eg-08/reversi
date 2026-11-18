@@ -84,7 +84,7 @@ Lv.5 is a classic alpha-beta engine:
 | Technique | What it does | Why |
 |---|---|---|
 | Negamax | one function for both players: my score = −(opponent's score) | half the code, no color bugs |
-| Alpha-beta pruning | skips moves that cannot change the result | searches roughly the square root of the full tree with good ordering |
+| Alpha-beta pruning | skips moves that cannot change the result | with perfect ordering, searches roughly the square root of the full tree |
 | Principal variation search (PVS) | searches the first move with a full window, the others with a null window, and re-searches only if a move turns out better | most moves are worse than the first one, and proving that is cheap |
 | Iterative deepening | searches depth 1, 2, 3, … until time runs out | gives an answer at any moment and fills the transposition table with good first moves for the next depth |
 | Transposition table | a hash map from position to (depth, bound, value, best move) | reuses results for positions reached by different move orders, and supplies the best move to try first |
@@ -158,7 +158,7 @@ exact from the first solved position on. Earlier positions get the exact value o
 position, i.e. the result if both sides play perfectly from there. This removes the noise of endgame
 mistakes from every label in the game.
 
-**Reproducible and resumable.** Each game's random numbers come only from its game number, so the
+**Reproducible and resumable.** Each game's random numbers come only from the seed and its game number, so the
 output is byte-for-byte identical for any number of threads, and an interrupted run continues where it
 stopped (the settings are stored in the file header, and resuming with different settings is refused).
 
@@ -196,7 +196,21 @@ reinforcement learning by self-play, is to let the improved player generate new 
 better play gives positions closer to what a strong player actually meets, and better depth-6 choices.
 `gen_data.py --patterns auto` makes both sides search with the pattern evaluation, and
 `train_patterns.py` accepts several data files so old and new data can be combined.
-Results are in the README.
+
+Round 2: 200,000 new games played by the round-1 pattern evaluation (seed 1, so the random openings differ
+from round 1; ~2 h 15 min), then two candidates, each played against the round-1 weights for 400 games
+(0.3 s per move):
+
+| Candidate | W–L–D | Score vs round 1 (95% CI) | Elo |
+|---|---|---|---|
+| Round-2 data only | 310–76–14 | 79.2% (75.3–83.2%) | +233 |
+| Round-1 + round-2 data (adopted) | 333–58–9 | **84.4% (80.8–87.9%)** | +293 |
+
+Two observations. First, held-out R² went up a lot (midgame 0.73–0.80 on round-2 data, against 0.634 for
+round 1), but that is partly because games between stronger players are easier to predict; R² measured on
+different data sets cannot be compared, which is why only the match decides. Second, combining both rounds
+beat the new data alone: the new games are better played, but the old ones cover positions that a weaker
+opponent creates, and twice the data helps the many rarely seen pattern configurations.
 
 ## 7. Measuring strength
 
@@ -209,11 +223,13 @@ Results are in the README.
   interval is above 50%.
 - **Elo.** The score is also converted to an Elo difference, `−400 log₁₀(1/p − 1)`, which is easier to
   compare between experiments.
-- **Same conditions.** Both sides get the same time per move and run in separate processes in parallel.
+- **Same conditions.** Both sides get the same time per move. Games run in parallel, one game per process,
+  so time-limited play is slightly noisier under full load; both sides share that noise equally.
 
 **A known simplification.** The interval treats every game as independent, but the two games of a pair
-share an opening. Pairing removes opening luck, so the true uncertainty is, if anything, smaller; the
-interval is conservative.
+share an opening. If an opening favors one color, the pair's results tend to cancel and the true
+uncertainty is smaller; if an opening suits one engine with either color, the results are positively
+correlated and it is larger. A paired estimate (variance of the per-pair score) would be more exact.
 
 ## 8. Engineering for correctness
 
@@ -248,6 +264,7 @@ Every row is an `arena.py` match with colors swapped; the score counts a draw as
 | Opening book vs no book | 400 | 202–185–13 | 52.1% (47.2–57.0%), **not significant** | games start from random positions, so the book is used for 1–2 moves; its value is instant replies |
 | Book rebuilt with the pattern evaluation vs old book | 400 | 205–181–14 | 53.0% (48.1–57.9%), **not significant** | same reason |
 | Wasm in the browser vs Pyodide (approximate, native reproduction) | 50 | 49–0–1 | 99.0% (96.2–100%) | speed in the browser turned into strength |
+| Second round of self-play (round 1 + 2 data) vs round 1 | 400 | 333–58–9 | **84.4% (80.8–87.9%)** | the learning loop pays off; keep the old data too |
 
 The opening-book result is the most useful "failure": it showed that the engine was not losing in the
 opening, which pointed to the evaluation function as the bottleneck and led to the pattern work.
@@ -262,8 +279,8 @@ opening, which pointed to the evaluation function as the bottleneck and led to t
   no evaluation calls), which is much faster per node.
 - **Transposition table.** It is an unbounded hash map cleared before each move. A fixed-size table with
   a replacement policy would use memory predictably and could be kept between moves.
-- **Float scores.** Scores are floats so that Python and Rust behave identically; integer scores would be
-  faster and make null windows exact.
+- **Float scores.** Scores are floats, inherited from the original Python design (and kept so the two
+  engines stay identical); integer scores would be faster and make null windows exact.
 - **Learning.** The evaluation is linear in its features. The next step is a small neural network trained
   on the same data, and eventually reinforcement learning with search-guided targets (in the style of
   AlphaZero) on cloud GPUs.
@@ -274,8 +291,9 @@ opening, which pointed to the evaluation function as the bottleneck and led to t
 A reversi engine in Rust with a learned evaluation, playable in the browser through WebAssembly. I
 started in Python, added alpha-beta search with iterative deepening and a transposition table, then found
 by measurement that the evaluation function was the bottleneck. I replaced a hand-tuned linear evaluation
-with pattern tables trained by ridge regression on 200,000 self-play games, which won 97% of games
-against the old version (194–6, 95% CI 94.6–99.4%). The Rust port is verified to be identical to the Python reference and is about
+with pattern tables trained by ridge regression on self-play games, which won 97% of games against the
+old version (194–6, 95% CI 94.6–99.4%); a second round of self-play by the new evaluation won another 84%
+against the first (400 games, 95% CI 80.8–87.9%). The Rust port is verified to be identical to the Python reference and is about
 80× faster.
 
 **Q: What was the hardest part?**
@@ -321,6 +339,11 @@ far, which is safe because the previous best move is always searched first.
 Self-play: each game's randomness depends only on its game number, and results are stored by game
 number, so thread scheduling does not matter. Training: work is split into fixed chunks and partial sums
 are added in a fixed order.
+
+**Q: Your second round of self-play improved R² a lot. Is that why it is stronger?**
+Not necessarily: the round-2 validation games were played by a stronger player and are easier to predict,
+so R² on different data sets is not comparable. The 84% match result is the evidence; R² is only a sanity
+check within one data set.
 
 **Q: What would you do with more time?**
 Incremental pattern updates and a dedicated endgame solver for speed; then a neural-network evaluation

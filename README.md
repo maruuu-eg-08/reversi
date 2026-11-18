@@ -22,12 +22,12 @@ You can undo moves, copy the game record, and see the name of the opening being 
 
 | | |
 |---|---|
-| **Learned pattern evaluation** | 11 board shapes (84 rotated/reflected instances) × 15 game stages, trained on 200,000 self-play games (11.9 M positions). Beats the previous evaluation **194–6 (97.0%)**. |
+| **Learned pattern evaluation** | 11 board shapes (84 rotated/reflected instances) × 15 game stages, trained on 400,000 self-play games (23.9 M positions) from two rounds of self-play. Beats the linear evaluation **194–6 (97.0%)**; the second round beats the first **84.4%**. |
 | **Rust engine, bit-identical to Python** | Iterative-deepening PVS with a transposition table and exact endgame solving. **~80× faster** than the Python version while returning the same move, score *and node count*. |
 | **Runs in the browser** | The Rust engine compiled to WebAssembly (145 KB) replaced a 10 MB Python runtime (Pyodide). Lv.5 now reads 9–11 plies per second in the browser. |
 | **Opening book** | 7,081 positions analyzed 10 plies deep, stored once per symmetry class. Its main line rediscovers the human *Tiger → Aubrey* opening. |
 | **Measured, not guessed** | `arena.py` plays every opening with colors swapped and reports win rate, 95% CI and Elo. Results that showed no significant gain are reported as such. |
-| **Tested** | 145 Python tests (including Rust/Python equality), 34 Rust tests, and a Node smoke test of the built WebAssembly, all in CI. |
+| **Tested** | 148 Python tests (including Rust/Python equality), 35 Rust tests, and a Node smoke test of the built WebAssembly, all in CI. |
 
 ## Results
 
@@ -43,6 +43,8 @@ You can undo moves, copy the game record, and see the name of the opening being 
 | Rust vs Python engine, same 0.3 s | 200 | 193–7–0 | 96.5% (94.0–99.0%) | +40.2 |
 | **Pattern vs linear evaluation** (both Rust, 0.3 s) | 200 | 194–6–0 | **97.0% (94.6–99.4%)** | +32.6 |
 | New web Lv.5 vs old web Lv.5 (1 s, approximate*) | 50 | 49–0–1 | 99.0% (96.2–100%) | +46.1 |
+| **Self-play round 2 vs round 1** (round 1 + 2 data, 0.3 s) | 400 | 333–58–9 | **84.4% (80.8–87.9%)** | +12.8 |
+| Self-play round 2, round 2 data only, vs round 1 (0.3 s) | 400 | 310–76–14 | 79.2% (75.3–83.2%) | +11.1 |
 
 Every opening (a few random moves from the start) is played twice with colors swapped, which cancels
 first-move advantage and opening luck. *The web comparison reproduces both versions natively; in the
@@ -96,6 +98,18 @@ positions takes 136 s; λ = 30 was chosen on a held-out set (1 game in 10).
 
 The pattern evaluation is ~5× slower per node and searches about 1.7 plies shallower in the same time,
 yet it wins 97% of games: **evaluating positions well matters more than searching deeper.**
+
+**A second round of self-play.** The first data set was played by the old linear evaluation. Letting the
+trained pattern evaluation play 200,000 new games (`gen_data.py --patterns auto`, ~2 h 15 min at ~24
+games/s) and retraining gave a clearly stronger engine:
+
+| Weights | Training data | vs round-1 weights (400 games, 0.3 s) |
+|---|---|---|
+| Round 2, new data only | 200,000 games played by the pattern evaluation | 79.2% (75.3–83.2%) |
+| **Round 2, old + new data (adopted)** | 400,000 games, 23.9 M positions (training: 5 min) | **84.4% (80.8–87.9%)**, Elo +293 |
+
+Combining both rounds beat using only the new games: the new games are higher-quality but cover fewer of
+the positions a weaker opponent creates.
 
 ### 3. Rust engine, verified against Python
 
@@ -173,12 +187,14 @@ pip install ./backend_rust            # or: cd backend_rust && maturin develop -
 cd backend_rust && cargo test --release
 ```
 
-**Reproduce the pattern evaluation** (Rust engine required; ~70 min + ~2 min on 8 cores):
+**Reproduce the pattern evaluation** (Rust engine required; ~3.5 h on 8 cores in total):
 
 ```bash
 cd backend
-python gen_data.py --games 200000 --out ../data/selfplay-200k.bin
-python train_patterns.py --data ../data/selfplay-200k.bin --out pattern_weights.bin
+python gen_data.py --games 200000 --out ../data/selfplay-200k.bin                       # round 1 (linear eval)
+python train_patterns.py --data ../data/selfplay-200k.bin --out ../data/round1.bin
+python gen_data.py --games 200000 --seed 1 --patterns ../data/round1.bin --out ../data/selfplay-gen2-200k.bin
+python train_patterns.py --data ../data/selfplay-200k.bin ../data/selfplay-gen2-200k.bin --out pattern_weights.bin
 python build_book.py --depth 10 --full-plies 6 --plies 8 --patterns pattern_weights.bin
 ```
 
@@ -216,5 +232,5 @@ tests/                  pytest, including Rust/Python equality tests
 
 ## Roadmap
 
-- Regenerate self-play data with the pattern evaluation and retrain (iterate the learning loop).
+- A third round of self-play with the round-2 weights, and a rebuilt opening book.
 - Incremental pattern updates (only the patterns touched by a move) to search deeper.
