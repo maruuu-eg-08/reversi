@@ -33,7 +33,7 @@ def train(data, out, lam=30.0, max_iter=300, tol=1e-6, valid_every=10, threads=N
     )  # fmt: skip
     reports = [{k: (int(v) if k in ("stage", "n_train", "n_valid", "iterations", "clamped") else v) for k, v in r.items()} for r in reports]
     with open(out + ".json", "w") as f:
-        settings = {"data": [os.path.abspath(d) for d in data], "lambda": lam, "max_iter": max_iter, "tol": tol, "valid_every": valid_every}
+        settings = {"data": [os.path.basename(d) for d in data], "lambda": lam, "max_iter": max_iter, "tol": tol, "valid_every": valid_every}
         json.dump({"settings": settings, "stages": reports}, f, indent=2)
     return reports
 

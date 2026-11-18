@@ -5,7 +5,7 @@
 //! 2. then both sides search to depth `depth`
 //! 3. from `solve_empties` empty squares on, the game is solved exactly and played perfectly
 //!
-//! Each position is labelled with the final disc difference for its side to move. From the first solved
+//! Each position is labeled with the final disc difference for its side to move. From the first solved
 //! position on the labels are exact; earlier positions get the exact value of that first solved position
 //! (the result if both sides play perfectly from there). Empty squares go to the winner (as in `final_score`).
 //!

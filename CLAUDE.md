@@ -161,8 +161,12 @@ Progress (branch `selfplay-pattern-eval`):
   running in the background (`caffeinate -w <pid>` keeps the Mac awake until it ends). Check with
   `tail -1 data/gen2-200k.log` and `ps aux | grep gen_data`. If it is not running and the log does not show
   200000/200000, rerun the resume command above (the file resumes where it stopped).
-- A review of PR #19 with the `code-reviewer` subagent was started but not finished; run it again in the new chat
-  (the subagents are loaded only when a chat starts).
+- PR #19 reviewed by `code-reviewer` (2026-11-18): no blockers. The three must-fix items are fixed: American
+  spelling (labeled, canceling), games + 95% CI for every strength claim in DESIGN.md, and `train_patterns.py`
+  records data file basenames (no local paths). Nice-to-have items left open: Rust `load_patterns` cache keyed by
+  path only (stale after retraining in one process), stronger hash test, DESIGN.md wording (arena parallelism,
+  count of configurations, λ chosen on the R² holdout), clean error for a missing `--patterns` file, one weights
+  JSON file name.
 - `docs/DESIGN.md` first version written (design, results table, limitations, interview Q&A). Its
   "Iterating the loop" section must be updated with the gen-2 results.
 - Next: train (a) gen-2 only and (b) gen-1 + gen-2, compare each with the current weights in arena

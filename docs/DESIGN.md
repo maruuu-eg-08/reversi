@@ -108,8 +108,8 @@ versions:
 |---|---|---|
 | 1. Hand-written square weights | corners good, squares next to corners bad | baseline |
 | 2. Genetic algorithm (`ga_trainer.py`) | evolve 9 coefficients (3 features × 3 game phases) by playing games | worked but slow and noisy: each fitness value is a few games |
-| 3. Linear regression (`tune_eval.py`) | fit 12 coefficients (positional, mobility, discs, frontier × 3 phases) to the final results of self-play games | **87% vs the untrained coefficients**; cheaper and more stable than the GA |
-| 4. Pattern evaluation (`patterns.py`, `pattern.rs`) | a learned score for every configuration of 11 board shapes, per game stage | **97% vs version 3** |
+| 3. Linear regression (`tune_eval.py`) | fit 12 coefficients (positional, mobility, discs, frontier × 3 phases) to the final results of self-play games | **87% vs the untrained coefficients** (87–13 in 100 games, 95% CI 80.4–93.6%); cheaper and more stable than the GA |
+| 4. Pattern evaluation (`patterns.py`, `pattern.rs`) | a learned score for every configuration of 11 board shapes, per game stage | **97% vs version 3** (194–6 in 200 games, 95% CI 94.6–99.4%) |
 
 The lesson from versions 2 → 3 was that when a problem can be written as least squares, solving it
 directly beats searching for the answer by trial and error.
@@ -137,7 +137,7 @@ value and adds them up.
   different summation order changes the last bit, and the engines stop agreeing.)
 
 **Cost.** The pattern evaluation is about 5× slower per node than the linear one, so in the same time it
-searches about 1.7 plies shallower. It still wins 97% of games: **a better evaluation was worth more than
+searches about 1.7 plies shallower. It still wins 97% of games (194–6, 95% CI 94.6–99.4%): **a better evaluation was worth more than
 deeper search.**
 
 ## 6. The learning pipeline
@@ -153,7 +153,7 @@ deeper search.**
 Each game starts with 8–20 random moves (so the data covers many openings), then both sides search to
 depth 6, and from 14 empty squares on the game is **solved exactly** and played perfectly.
 
-**Labels.** Each position is labelled with the final disc difference for the side to move. Labels are
+**Labels.** Each position is labeled with the final disc difference for the side to move. Labels are
 exact from the first solved position on. Earlier positions get the exact value of that first solved
 position, i.e. the result if both sides play perfectly from there. This removes the noise of endgame
 mistakes from every label in the game.
@@ -237,15 +237,17 @@ interval is conservative.
 
 ## 9. What worked and what did not
 
-| Change | Measured effect | Takeaway |
-|---|---|---|
-| Lv.5 search vs Lv.4 (fixed depth 4) | 98% | the search techniques work |
-| Regression-trained linear evaluation | 87% vs untrained | least squares beats a genetic algorithm for fitting coefficients |
-| Rust port, same time per move | 96.5% vs Python | ~80× more nodes = a few plies deeper |
-| Pattern evaluation | **97% vs linear** | evaluation quality mattered most |
-| Opening book | 52.1%, **not significant** | games start from random positions, so the book is used for 1–2 moves; its value is instant replies |
-| Book rebuilt with the pattern evaluation | 53.0%, **not significant** | same reason |
-| Wasm in the browser vs Pyodide | 99% (approximate, native reproduction) | speed in the browser turned into strength |
+Every row is an `arena.py` match with colors swapped; the score counts a draw as half a win.
+
+| Change | Games | W–L–D | Score (95% CI) | Takeaway |
+|---|---|---|---|---|
+| Lv.5 search vs Lv.4 (fixed depth 4) | 100 | 98–2–0 | 98.0% (95.3–100%) | the search techniques work |
+| Regression-trained linear evaluation vs untrained | 100 | 87–13–0 | 87.0% (80.4–93.6%) | least squares beats a genetic algorithm for fitting coefficients |
+| Rust port vs Python, same time per move | 200 | 193–7–0 | 96.5% (94.0–99.0%) | ~80× more nodes = a few plies deeper |
+| Pattern vs linear evaluation | 200 | 194–6–0 | **97.0% (94.6–99.4%)** | evaluation quality mattered most |
+| Opening book vs no book | 400 | 202–185–13 | 52.1% (47.2–57.0%), **not significant** | games start from random positions, so the book is used for 1–2 moves; its value is instant replies |
+| Book rebuilt with the pattern evaluation vs old book | 400 | 205–181–14 | 53.0% (48.1–57.9%), **not significant** | same reason |
+| Wasm in the browser vs Pyodide (approximate, native reproduction) | 50 | 49–0–1 | 99.0% (96.2–100%) | speed in the browser turned into strength |
 
 The opening-book result is the most useful "failure": it showed that the engine was not losing in the
 opening, which pointed to the evaluation function as the bottleneck and led to the pattern work.
@@ -273,7 +275,7 @@ A reversi engine in Rust with a learned evaluation, playable in the browser thro
 started in Python, added alpha-beta search with iterative deepening and a transposition table, then found
 by measurement that the evaluation function was the bottleneck. I replaced a hand-tuned linear evaluation
 with pattern tables trained by ridge regression on 200,000 self-play games, which won 97% of games
-against the old version. The Rust port is verified to be identical to the Python reference and is about
+against the old version (194–6, 95% CI 94.6–99.4%). The Rust port is verified to be identical to the Python reference and is about
 80× faster.
 
 **Q: What was the hardest part?**

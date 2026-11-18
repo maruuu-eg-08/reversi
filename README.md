@@ -80,7 +80,7 @@ It is replaced by tables that score **every configuration of a board shape**:
   Python and Rust agree exactly whatever the summation order.
 
 **Training data** (`gen_data.py` → Rust `selfplay.rs`): 200,000 self-play games with 8–20 random opening
-moves, depth-6 search in the middlegame and exact solving from 14 empty squares. Each position is labelled
+moves, depth-6 search in the middlegame and exact solving from 14 empty squares. Each position is labeled
 with the final disc difference under perfect play from the solve point. Games are seeded by game number,
 so the data is identical for any thread count, and an interrupted run resumes where it stopped.
 

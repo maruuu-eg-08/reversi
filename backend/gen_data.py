@@ -1,6 +1,6 @@
 """Generate pattern-evaluation training data by self-play (requires the Rust engine).
 
-See backend_rust/src/selfplay.rs for how games are played and labelled.
+See backend_rust/src/selfplay.rs for how games are played and labeled.
 The file is a header (the settings as JSON) followed by 22-byte records, one per position.
 If interrupted, running the same command again continues where it stopped (the last, partially
 written game is regenerated).
