@@ -16,6 +16,7 @@ use std::sync::Mutex;
 
 use crate::board::{bits, legal_moves, play};
 use crate::eval::{final_score, Evaluator, WIN_SCORE};
+use crate::pattern::PatternWeights;
 use crate::search::Searcher;
 
 /// Size of one record in bytes
@@ -204,12 +205,15 @@ pub fn play_game(game: u32, cfg: &Config, searcher: &mut Searcher) -> Vec<Record
 }
 
 /// Play games `first`..`first + count - 1` on `threads` threads and return the records
-/// in game order. `on_progress` is called after each finished game.
+/// in game order. With `patterns`, the searches use that pattern evaluation at the leaves (as Lv.5 does);
+/// otherwise the linear evaluation `eval`. `on_progress` is called after each finished game.
+#[allow(clippy::too_many_arguments)]
 pub fn play_games(
     first: u32,
     count: u32,
     cfg: &Config,
     eval: &Evaluator,
+    patterns: Option<&std::sync::Arc<PatternWeights>>,
     threads: usize,
     on_progress: &(dyn Fn(usize) + Sync),
 ) -> Vec<Record> {
@@ -220,6 +224,9 @@ pub fn play_games(
         for _ in 0..threads.max(1) {
             scope.spawn(|| {
                 let mut searcher = Searcher::new(eval.clone());
+                if let Some(w) = patterns {
+                    searcher = searcher.with_patterns(w.clone());
+                }
                 loop {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     if i >= count as usize {
@@ -305,11 +312,26 @@ mod tests {
     #[test]
     fn same_seed_gives_same_games_regardless_of_threads() {
         let e = eval();
-        let a = play_games(0, 12, &cfg(), &e, 1, &|_| {});
-        let b = play_games(0, 12, &cfg(), &e, 4, &|_| {});
+        let a = play_games(0, 12, &cfg(), &e, None, 1, &|_| {});
+        let b = play_games(0, 12, &cfg(), &e, None, 4, &|_| {});
         assert_eq!(a, b);
-        let c = play_games(0, 12, &Config { seed: 43, ..cfg() }, &e, 4, &|_| {});
+        let c = play_games(0, 12, &Config { seed: 43, ..cfg() }, &e, None, 4, &|_| {});
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn pattern_evaluation_games_are_deterministic_and_differ_from_linear() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../backend/pattern_weights.bin"
+        );
+        let w = std::sync::Arc::new(PatternWeights::load(path).unwrap());
+        let e = eval();
+        let a = play_games(0, 12, &cfg(), &e, Some(&w), 1, &|_| {});
+        let b = play_games(0, 12, &cfg(), &e, Some(&w), 4, &|_| {});
+        assert_eq!(a, b);
+        let linear = play_games(0, 12, &cfg(), &e, None, 4, &|_| {});
+        assert_ne!(a, linear, "the evaluation changes the moves played");
     }
 
     #[test]

@@ -384,7 +384,7 @@ mod tests {
             solve_empties: 0,
             seed: 5,
         };
-        play_games(0, 400, &cfg, &linear(), 4, &|_| {})
+        play_games(0, 400, &cfg, &linear(), None, 4, &|_| {})
     }
 
     /// with labels equal to a known evaluation, training reproduces that evaluation almost exactly

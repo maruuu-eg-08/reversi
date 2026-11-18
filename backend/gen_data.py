@@ -5,17 +5,23 @@ The file is a header (the settings as JSON) followed by 22-byte records, one per
 If interrupted, running the same command again continues where it stopped (the last, partially
 written game is regenerated).
 
+By default both sides search with the linear evaluation. --patterns auto (the bundled weights) or
+--patterns <file> makes them search with pattern evaluation instead, as Lv.5 does; the header then
+records the SHA-256 of the weights file, so resuming with other weights is refused.
+
 Usage:
     python gen_data.py --games 50000 --out ../data/selfplay.bin
+    python gen_data.py --games 200000 --patterns auto --seed 1 --out ../data/selfplay-gen2.bin
 """
 
 import argparse
+import hashlib
 import json
 import os
 import struct
 import time
 
-from strong_ai import _native
+from strong_ai import DEFAULT_PATTERNS, _native
 from weights import POSITION_WEIGHTS, STRONG_EVAL_COEFFS
 
 MAGIC = b"RVDAT\x01"
@@ -74,9 +80,14 @@ def _resume_point(path, params):
     return last_game
 
 
-def generate(out, games, depth=6, random_min=8, random_max=20, solve_empties=14, seed=0, threads=None, batch=500, log=print):
+def generate(
+    out, games, depth=6, random_min=8, random_max=20, solve_empties=14, seed=0, threads=None, batch=500, patterns=None, log=print
+):
+    """patterns: None (linear evaluation), "auto" (the bundled weights) or the path of a weights file."""
     if _native is None:
         raise SystemExit("the Rust engine is required: pip install ./backend_rust")
+    if patterns == "auto":
+        patterns = DEFAULT_PATTERNS
     params = {
         "games": games,
         "depth": depth,
@@ -86,6 +97,9 @@ def generate(out, games, depth=6, random_min=8, random_max=20, solve_empties=14,
         "seed": seed,
         "eval_coeffs": list(STRONG_EVAL_COEFFS),
     }
+    if patterns is not None:
+        with open(patterns, "rb") as f:
+            params["patterns_sha256"] = hashlib.sha256(f.read()).hexdigest()
     threads = threads or os.cpu_count() or 1
     start_game = 0
     if os.path.exists(out) and os.path.getsize(out) > 0:
@@ -104,7 +118,7 @@ def generate(out, games, depth=6, random_min=8, random_max=20, solve_empties=14,
             count = min(batch, games - first)
             data = _native.generate_games(
                 first, count, seed, depth, random_min, random_max, solve_empties,
-                list(STRONG_EVAL_COEFFS), list(POSITION_WEIGHTS), threads,
+                list(STRONG_EVAL_COEFFS), list(POSITION_WEIGHTS), threads, patterns,
             )  # fmt: skip
             f.write(data)
             f.flush()
@@ -128,9 +142,10 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("-j", "--threads", type=int, default=None)
     parser.add_argument("--batch", type=int, default=500, help="write to the file every this many games")
+    parser.add_argument("--patterns", default=None, help="search with pattern evaluation: 'auto' (bundled weights) or a weights file")
     parser.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "selfplay.bin"))
     a = parser.parse_args()
-    generate(a.out, a.games, a.depth, a.random_min, a.random_max, a.solve_empties, a.seed, a.threads, a.batch)
+    generate(a.out, a.games, a.depth, a.random_min, a.random_max, a.solve_empties, a.seed, a.threads, a.batch, a.patterns)
 
 
 if __name__ == "__main__":

@@ -139,8 +139,10 @@ mod python {
     }
 
     /// Generate training data by self-play: all positions of games first..first+count-1 as bytes of
-    /// RECORD_SIZE-byte records (in game order). Releases the GIL while searching.
+    /// RECORD_SIZE-byte records (in game order). With pattern_path, the searches use that file's pattern
+    /// evaluation; otherwise the linear evaluation. Releases the GIL while searching.
     #[pyfunction]
+    #[pyo3(signature = (first, count, seed, depth, random_min, random_max, solve_empties, coeffs, weights, threads, pattern_path=None))]
     #[allow(clippy::too_many_arguments)]
     fn generate_games<'py>(
         py: Python<'py>,
@@ -154,6 +156,7 @@ mod python {
         coeffs: Vec<f64>,
         weights: Vec<f64>,
         threads: usize,
+        pattern_path: Option<&str>,
     ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
         if random_min > random_max {
             return Err(PyValueError::new_err(
@@ -161,6 +164,7 @@ mod python {
             ));
         }
         let eval = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
+        let patterns = pattern_path.map(load_patterns).transpose()?;
         let cfg = crate::selfplay::Config {
             depth,
             random_min,
@@ -169,19 +173,27 @@ mod python {
             seed,
         };
         let records = py.allow_threads(|| {
-            crate::selfplay::play_games(first, count, &cfg, &eval, threads, &|_| {})
+            crate::selfplay::play_games(
+                first,
+                count,
+                &cfg,
+                &eval,
+                patterns.as_ref(),
+                threads,
+                &|_| {},
+            )
         });
         let bytes: Vec<u8> = records.iter().flat_map(|r| r.to_bytes()).collect();
         Ok(pyo3::types::PyBytes::new_bound(py, &bytes))
     }
 
-    /// Train pattern-evaluation weights from self-play data and save them to out_path.
+    /// Train pattern-evaluation weights from self-play data (one or more files) and save them to out_path.
     /// Returns per-stage results as a list of dicts; progress goes to stderr. Releases the GIL while working.
     #[pyfunction]
     #[allow(clippy::too_many_arguments)]
     fn train_patterns(
         py: Python<'_>,
-        data_path: &str,
+        data_paths: Vec<String>,
         out_path: &str,
         lam: f64,
         max_iter: usize,
@@ -195,8 +207,13 @@ mod python {
             return Err(PyValueError::new_err("valid_mod must be at least 1"));
         }
         let linear = Evaluator::new(&coeffs, &weights).map_err(PyValueError::new_err)?;
-        let records = crate::selfplay::read_data_file(std::path::Path::new(data_path))
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut records = Vec::new();
+        for path in &data_paths {
+            records.extend(
+                crate::selfplay::read_data_file(std::path::Path::new(path))
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            );
+        }
         let cfg = crate::train::TrainConfig {
             lambda: lam,
             max_iter,
