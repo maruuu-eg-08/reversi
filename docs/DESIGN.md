@@ -136,9 +136,23 @@ value and adds them up.
   same result in any order, so Python, native Rust and WebAssembly agree exactly. (With floats, a
   different summation order changes the last bit, and the engines stop agreeing.)
 
-**Cost.** The pattern evaluation is about 5× slower per node than the linear one, so in the same time it
-searches about 1.7 plies shallower. It still wins 97% of games (194–6, 95% CI 94.6–99.4%): **a better evaluation was worth more than
+**Cost.** Before incremental evaluation (below), the pattern evaluation was about 5× slower per node than
+the linear one, so in the same time it searched about 1.7 plies shallower. It still wins 97% of games (194–6, 95% CI 94.6–99.4%): **a better evaluation was worth more than
 deeper search.**
+
+**Incremental evaluation.** Profiling (macOS `sample`) showed that 61% of the search time went into
+rebuilding all 84 indices at every leaf, about 400 additions. The Rust search now carries the indices
+down the tree: a move changes only the instances that contain the placed square or a flipped square
+(about 10 instances per square), so a child's indices are its parent's plus a few corrections. Two copies
+are kept, one from each side's point of view, so a change of side to move (including a pass) is a swap.
+Once the remaining depth reaches the number of empty squares, the search ends the game before any
+evaluation, so the updates are switched off there. The indices are exactly the ones a full recomputation
+gives: a test plays random games and compares them after every move, another compares whole searches with
+and without the updates (including passes and solved endgames), and in debug builds every leaf is checked.
+So moves, scores and node counts did not change:
+depth 10 became 1.52× faster and Lv.5 completes about 0.4 more plies in 0.3 s. Python still recomputes
+the indices; it is the readable reference, and since the values are identical the equality tests did not
+need to change.
 
 ## 6. The learning pipeline
 
@@ -271,9 +285,6 @@ opening, which pointed to the evaluation function as the bottleneck and led to t
 
 ## 10. Limitations and next steps
 
-- **Full recomputation of patterns at every node.** All 84 instances are re-read for every evaluated
-  position. Updating only the patterns that contain flipped squares (incremental evaluation) would make
-  evaluation several times faster and the search deeper.
 - **No dedicated endgame solver.** The exact solve reuses the midgame search. Strong programs switch to
   a specialized solver near the end (parity-based ordering, no transposition table in the last few plies,
   no evaluation calls), which is much faster per node.
@@ -346,7 +357,7 @@ so R² on different data sets is not comparable. The 84% match result is the evi
 check within one data set.
 
 **Q: What would you do with more time?**
-Incremental pattern updates and a dedicated endgame solver for speed; then a neural-network evaluation
+A dedicated endgame solver for speed (incremental pattern updates are done); then a neural-network evaluation
 trained on the same data; then reinforcement learning on cloud GPUs.
 
 **Q: What did you learn?**

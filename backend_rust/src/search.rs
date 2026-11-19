@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use crate::board::{bits, legal_moves, play};
 use crate::clock::now;
 use crate::eval::{final_score, Evaluator};
-use crate::pattern::PatternWeights;
+use crate::pattern::{Features, PatternWeights};
 
 /// Null-window width for PVS (same value as Python)
 const NULL_WINDOW: f64 = 1e-6;
@@ -64,6 +64,9 @@ pub struct Searcher {
     deadline: Option<f64>,
     /// best move found so far in the current iteration (used on timeout)
     iter_best: Option<(u64, f64)>,
+    /// update the pattern indices along the search instead of recomputing them at every leaf
+    /// (same values; switched off only by tests that compare the two)
+    incremental: bool,
 }
 
 impl Searcher {
@@ -75,6 +78,7 @@ impl Searcher {
             nodes: 0,
             deadline: None,
             iter_best: None,
+            incremental: true,
         }
     }
 
@@ -90,6 +94,64 @@ impl Searcher {
         match &self.pattern {
             Some(w) => w.evaluate(p, o, my_moves, legal_moves(o, p)),
             None => self.eval.evaluate(p, o, my_moves),
+        }
+    }
+
+    /// Pattern evaluation from the incrementally updated indices `f` (same value as `evaluate`).
+    #[inline]
+    fn evaluate_incremental(&self, p: u64, o: u64, my_moves: u64, f: &Features) -> f64 {
+        let w = self
+            .pattern
+            .as_ref()
+            .expect("incremental evaluation is only used with patterns");
+        let opp_moves = legal_moves(o, p);
+        let raw = w.evaluate_features(f, (!(p | o)).count_ones(), my_moves, opp_moves);
+        debug_assert_eq!(raw, w.evaluate_raw(p, o, my_moves, opp_moves));
+        f64::from(raw) / f64::from(crate::pattern::SCALE)
+    }
+
+    /// Indices of the root position when the leaves use incremental pattern evaluation.
+    fn root_features(&self, p: u64, o: u64) -> Option<Features> {
+        (self.pattern.is_some() && self.incremental).then(|| Features::new(p, o))
+    }
+
+    /// Whether the children of a node with `depth` and (`p`, `o`) need pattern indices: once
+    /// `depth >= empties` the search reaches the end of the game before depth 0 (moves lower both by
+    /// one, passes neither), so no evaluation happens below and the updates are skipped.
+    #[inline]
+    fn track_children(f: Option<&Features>, p: u64, o: u64, depth: i32) -> bool {
+        f.is_some() && depth < (!(p | o)).count_ones() as i32
+    }
+
+    /// Indices of the child after move `x` from (`p`, `o`) to (_, `no`), if they are tracked.
+    #[inline]
+    fn child_features(
+        f: Option<&Features>,
+        track: bool,
+        p: u64,
+        x: u64,
+        no: u64,
+    ) -> Option<Features> {
+        match f {
+            Some(f) if track => Some(f.after_move(x.trailing_zeros(), no ^ p ^ x)),
+            _ => None,
+        }
+    }
+
+    /// `negamax` with incremental pattern evaluation when `f` is given, without otherwise.
+    #[inline(always)]
+    fn visit(
+        &mut self,
+        p: u64,
+        o: u64,
+        f: Option<&Features>,
+        depth: i32,
+        alpha: f64,
+        beta: f64,
+    ) -> Result<f64, Timeout> {
+        match f {
+            Some(f) => self.negamax::<true>(p, o, f, depth, alpha, beta),
+            None => self.negamax::<false>(p, o, &Features::EMPTY, depth, alpha, beta),
         }
     }
 
@@ -184,10 +246,20 @@ impl Searcher {
         self.nodes = 0;
         self.deadline = None;
         let mut results = Vec::new();
+        let f = self.root_features(p, o);
+        let track = Self::track_children(f.as_ref(), p, o, depth as i32);
         for x in self.ordered(p, o, legal_moves(p, o), 0, depth as i32) {
             let (np, no) = play(p, o, x);
+            let cf = Self::child_features(f.as_ref(), track, p, x, no);
             let score = -self
-                .negamax(np, no, depth as i32 - 1, f64::NEG_INFINITY, f64::INFINITY)
+                .visit(
+                    np,
+                    no,
+                    cf.as_ref(),
+                    depth as i32 - 1,
+                    f64::NEG_INFINITY,
+                    f64::INFINITY,
+                )
                 .expect("no time limit, so the search cannot time out");
             results.push((x, score));
         }
@@ -237,10 +309,12 @@ impl Searcher {
         list
     }
 
-    fn negamax(
+    /// `PAT`: `f` holds the pattern indices of (`p`, `o`) and the leaves use them.
+    fn negamax<const PAT: bool>(
         &mut self,
         p: u64,
         o: u64,
+        f: &Features,
         depth: i32,
         mut alpha: f64,
         beta: f64,
@@ -255,10 +329,19 @@ impl Searcher {
             if legal_moves(o, p) == 0 {
                 return Ok(final_score(p, o));
             }
-            return Ok(-self.negamax(o, p, depth, -beta, -alpha)?); // pass
+            // pass
+            return Ok(if PAT {
+                -self.negamax::<true>(o, p, &f.passed(), depth, -beta, -alpha)?
+            } else {
+                -self.negamax::<false>(o, p, f, depth, -beta, -alpha)?
+            });
         }
         if depth <= 0 {
-            return Ok(self.evaluate(p, o, moves));
+            return Ok(if PAT {
+                self.evaluate_incremental(p, o, moves, f)
+            } else {
+                self.evaluate(p, o, moves)
+            });
         }
 
         let key = (p, o);
@@ -278,19 +361,23 @@ impl Searcher {
         let original_alpha = alpha;
         let mut best = f64::NEG_INFINITY;
         let mut best_move = 0;
+        let f = PAT.then_some(f);
+        let track = Self::track_children(f, p, o, depth);
         for (i, x) in self
             .ordered(p, o, moves, tt_move, depth)
             .into_iter()
             .enumerate()
         {
             let (np, no) = play(p, o, x);
+            let cf = Self::child_features(f, track, p, x, no);
             let score = if i == 0 {
-                -self.negamax(np, no, depth - 1, -beta, -alpha)?
+                -self.visit(np, no, cf.as_ref(), depth - 1, -beta, -alpha)?
             } else {
                 // PVS: test with a null window whether the move beats alpha; re-search if it does
-                let s = -self.negamax(np, no, depth - 1, -alpha - NULL_WINDOW, -alpha)?;
+                let s =
+                    -self.visit(np, no, cf.as_ref(), depth - 1, -alpha - NULL_WINDOW, -alpha)?;
                 if alpha < s && s < beta {
-                    -self.negamax(np, no, depth - 1, -beta, -s)?
+                    -self.visit(np, no, cf.as_ref(), depth - 1, -beta, -s)?
                 } else {
                     s
                 }
@@ -331,18 +418,22 @@ impl Searcher {
         let beta = f64::INFINITY;
         let mut alpha = f64::NEG_INFINITY;
         let mut best_move = 0;
+        let f = self.root_features(p, o);
+        let track = Self::track_children(f.as_ref(), p, o, depth);
         for (i, x) in self
             .ordered(p, o, legal_moves(p, o), prev_best, depth)
             .into_iter()
             .enumerate()
         {
             let (np, no) = play(p, o, x);
+            let cf = Self::child_features(f.as_ref(), track, p, x, no);
             let score = if i == 0 {
-                -self.negamax(np, no, depth - 1, -beta, -alpha)?
+                -self.visit(np, no, cf.as_ref(), depth - 1, -beta, -alpha)?
             } else {
-                let s = -self.negamax(np, no, depth - 1, -alpha - NULL_WINDOW, -alpha)?;
+                let s =
+                    -self.visit(np, no, cf.as_ref(), depth - 1, -alpha - NULL_WINDOW, -alpha)?;
                 if s > alpha {
-                    -self.negamax(np, no, depth - 1, -beta, -s)?
+                    -self.visit(np, no, cf.as_ref(), depth - 1, -beta, -s)?
                 } else {
                     s
                 }
@@ -457,6 +548,53 @@ mod tests {
         assert!(scored.windows(2).all(|w| w[0].1 >= w[1].1));
         let r = s.search(p, o, f64::INFINITY, 4);
         assert_eq!(scored[0].1, r.score);
+    }
+
+    #[test]
+    fn incremental_pattern_evaluation_gives_identical_results() {
+        // random pattern weights; the search with incrementally updated indices must return the same
+        // move, score and node count as the search that recomputes them at every leaf. Positions cover
+        // the opening to the endgame (where depth >= empties switches the updates off) and passes.
+        // In debug builds every incremental leaf is also checked against a full recomputation.
+        let mut w = PatternWeights::zeros();
+        let mut r = crate::selfplay::Rng::new(11);
+        for st in &mut w.stages {
+            st.bias = r.below(201) as i32 - 100;
+            st.mobility = r.below(41) as i32 - 20;
+            for v in st.table.iter_mut() {
+                *v = r.below(2001) as i16 - 1000;
+            }
+        }
+        let w = Arc::new(w);
+        let mut passes = 0;
+        for seed in 0..40 {
+            let (p, o) = random_position(seed, 8 + (seed as u32 * 7) % 48);
+            if legal_moves(p, o).count_ones() < 2 {
+                continue;
+            }
+            let depth = if (!(p | o)).count_ones() <= 12 { 12 } else { 5 };
+            let mut inc = searcher().with_patterns(w.clone());
+            let mut full = searcher().with_patterns(w.clone());
+            full.incremental = false;
+            let a = inc.search(p, o, f64::INFINITY, depth);
+            let b = full.search(p, o, f64::INFINITY, depth);
+            assert_eq!(a, b, "seed {seed}");
+            assert_eq!(
+                inc.score_moves(p, o, 3),
+                full.score_moves(p, o, 3),
+                "seed {seed}"
+            );
+            // count passes within two plies of the root, to make sure the trees contain passes
+            for x in bits(legal_moves(p, o)) {
+                let (np, no) = play(p, o, x);
+                passes += usize::from(legal_moves(np, no) == 0);
+                for y in bits(legal_moves(np, no)) {
+                    let (qp, qo) = play(np, no, y);
+                    passes += usize::from(legal_moves(qp, qo) == 0 && legal_moves(qo, qp) != 0);
+                }
+            }
+        }
+        assert!(passes > 0);
     }
 
     #[test]
