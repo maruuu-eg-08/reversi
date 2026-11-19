@@ -130,6 +130,13 @@ pattern evaluation (#24) are done.
   examples/midgame_positions.txt 10 ../backend/pattern_weights.bin` (21,168,136 nodes at depth 10).
 - Incremental evaluation lives in Rust only (`pattern::Features`, `Searcher::incremental`); the test
   `incremental_pattern_evaluation_gives_identical_results` compares it with full recomputation.
+- **Round 3 of self-play started 2026-11-19 ~13:25** (after #24 was merged and deployed; live page checked):
+  `gen_data.py --games 200000 --patterns auto --seed 2 --out ../data/selfplay-gen3-200k.bin`, log
+  `data/gen3-200k.log`, pid in `data/gen3.pid`, kept awake with `caffeinate -i -w <pid>`. ~23.8 games/s,
+  about 2 h 20 min: the same speed as round 2, because B-1 does not speed up the exact endgame solves
+  (from 14 empties) that dominate data generation (B-2 would). If the Mac sleeps (lid closed) it pauses;
+  if the process dies, rerun the same command: it resumes from the file. Next: retrain (round 3 only;
+  rounds 1+2+3; maybe 2+3), arena each vs the round-2 weights (400 games at 0.3 s), adopt if stronger.
 - The user keeps an Obsidian dev log + roadmap (`~/Documents/Obsidian Vault/20_Projects/Notes/Othello AI - *.md`);
   update the day's log and the roadmap after each piece of work.
 
@@ -175,7 +182,7 @@ Start the day by confirming the plan with the user, then go.
    placed or flipped squares instead of recomputing all 84. Values must stay identical, so
    `tests/test_rust_engine.py` / `tests/test_rust_web_port.py` keep passing with the same moves, scores and node
    counts. Also used by the wasm build.
-3. **B-2 dedicated endgame solver**: in the last few empty squares, a specialized search without evaluation calls
+3. **B-2 dedicated endgame solver** (postponed by the user until after round 3): in the last few empty squares, a specialized search without evaluation calls
    (parity / fastest-first ordering, no transposition table at the very end). The search procedure changes, so
    implement it in Python too and keep the equality tests passing.
 4. After each step: `test-runner` (all checks), then `ai-benchmarker` (speed vs baseline; arena 200 openings =
