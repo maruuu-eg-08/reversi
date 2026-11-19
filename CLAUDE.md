@@ -118,6 +118,7 @@ data/             training data (gitignored, large)
 | #20 | Claude Code subagents (code-reviewer, test-runner, ai-benchmarker) | merged 2026-11-18 with the user's OK |
 | #24 | B-1 incremental pattern evaluation (Rust only; Python unchanged by the user's choice, values identical) | evaluation was 61% of search time; depth 10 1.52x faster, Lv.5 +0.4 ply in 0.3 s, results identical on 30 positions |
 | #26 | Learning loop round 3 (round-2 engine plays 200k games, retrain) | **round 3 (new data only) vs round 2: 1038-846-116 in 2,000 games, 54.8% (CI 52.6-57.0%)**; 2+3 data 52.8%, 1+2+3 51.5% (400 games, n.s.); converging (+293 -> +33 Elo) |
+| (docs) | "Why not MCTS?" added to docs/DESIGN.md (section 4 + interview Q) and linked from the README | reasons only, no MCTS was built or measured; an MCTS-vs-Lv.5 arena experiment is an optional later idea |
 
 ## Current status
 
@@ -172,7 +173,7 @@ them for repeated, well-defined jobs (full checks before a PR, reviews, benchmar
 ## Next session: first task (decided by the user on 2026-11-19)
 
 **Interview practice first**: go through docs/DESIGN.md in Japanese, then the user answers the interview
-questions in English (section 9 of DESIGN.md, plus a new one on round 3: proving a small gain needed 2,000
+questions in English (section 11 of DESIGN.md, incl. the new "Why not MCTS?", plus a new one on round 3: proving a small gain needed 2,000
 games, and why the loop is converging). Everything in the 2026-11-19 plan below is done except this and B-2.
 Afterwards, candidates: B-2 endgame solver (also speeds up data generation), D (neural-network evaluation),
 rebuilding the opening book with the round-3 weights.

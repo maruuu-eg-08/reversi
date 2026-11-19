@@ -99,6 +99,35 @@ so anything that beat it is safe.
 **Scores.** The evaluation returns a float. Finished games return a large constant (`WIN_SCORE`) plus the
 disc difference, so a win is always preferred to any heuristic score, and a bigger win to a smaller one.
 
+### Why alpha-beta and not Monte Carlo tree search?
+
+Monte Carlo tree search (MCTS) builds its tree by playing many games to the end with random (or cheaply
+chosen) moves and preferring the moves that win most often. It was the breakthrough in Go, where a good
+evaluation function was very hard to write. Reversi is a different case:
+
+| | Reversi | Go (where MCTS shone) |
+|---|---|---|
+| Legal moves per position | about 10 | about 250 |
+| Static evaluation | pattern tables predict the outcome well (midgame R² 0.634 here) | long thought to be impractical |
+| Endgame | the last ~20 empty squares can be solved exactly | cannot be solved |
+
+- **The tree is narrow, so alpha-beta searches deep.** With about 10 moves per position and good move
+  ordering, alpha-beta reaches depths that a sampling method cannot match in the same time.
+- **A good evaluation already exists.** MCTS replaces evaluation with random playouts; when a learned
+  evaluation is available, using it at the leaves of a deep search is more accurate than averaging noisy
+  playouts.
+- **Random playouts are especially noisy in reversi.** A single move near the end can flip a whole edge,
+  so the result of a random game says little about who was ahead.
+- **Exact endgames favor alpha-beta.** Alpha-beta gives the exact disc difference with perfect play;
+  MCTS only estimates win rates.
+- **This is what the strongest programs use.** Logistello (which beat the world champion in 1997) and
+  Edax are alpha-beta engines with pattern evaluation, the same design as this engine.
+
+MCTS does work in reversi when a neural network replaces the random playouts (AlphaZero style), but that
+needs far more compute than a laptop can provide. For this project, the planned neural-network step is to
+replace the evaluation function inside the existing alpha-beta search, not the search itself. These are
+reasons, not a measurement: a plain MCTS player was not built or played against Lv.5.
+
 ## 5. Evaluation: from hand-tuned to learned
 
 The evaluation function turned out to be the most important part of the engine. It went through four
@@ -359,6 +388,13 @@ from the same game never appear on both sides) and picked the best one.
 **Q: Why split validation data by game?**
 Positions from the same game are strongly correlated and share the same label. Splitting by position
 would leak information and make the validation error look better than it is.
+
+**Q: Why not Monte Carlo tree search?**
+MCTS is strongest when a good evaluation function is hard to write and the game tree is wide, as in Go.
+Reversi has about 10 moves per position, a learned pattern evaluation that predicts outcomes well, and
+endgames that can be solved exactly, so a deep alpha-beta search with that evaluation is the better fit;
+it is also what Logistello and Edax use. MCTS with a neural network (AlphaZero) would work, but needs far
+more compute than I had, so my neural-network plan is to replace the evaluation inside alpha-beta instead.
 
 **Q: How does the search use time?**
 Iterative deepening: depth 1, 2, 3 … each reusing the transposition table from the last. It stops

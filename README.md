@@ -70,6 +70,9 @@ Lv.5 searches with **negamax + principal variation search**, **iterative deepeni
 a **transposition table** that also orders moves, **fastest-first ordering** (moves that leave the
 opponent fewest replies first) and an **exact endgame solve** once the remaining squares fit in the search.
 
+Why alpha-beta rather than Monte Carlo tree search: reversi has few moves per position, a learned
+evaluation that works well and solvable endgames (see [docs/DESIGN.md](docs/DESIGN.md#why-alpha-beta-and-not-monte-carlo-tree-search)).
+
 ### 2. Pattern evaluation
 
 The original evaluation was linear in four features (positional weights, mobility, discs, frontier discs).
