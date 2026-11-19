@@ -169,6 +169,14 @@ ai-researcher added afterwards):
 Subagents start without this conversation's context and cost more than doing small things directly, so use
 them for repeated, well-defined jobs (full checks before a PR, reviews, benchmarks).
 
+## Next session: first task (decided by the user on 2026-11-19)
+
+**Interview practice first**: go through docs/DESIGN.md in Japanese, then the user answers the interview
+questions in English (section 9 of DESIGN.md, plus a new one on round 3: proving a small gain needed 2,000
+games, and why the loop is converging). Everything in the 2026-11-19 plan below is done except this and B-2.
+Afterwards, candidates: B-2 endgame solver (also speeds up data generation), D (neural-network evaluation),
+rebuilding the opening book with the round-3 weights.
+
 ## Plan for 2026-11-19 (decided by the user on 2026-11-18)
 
 Order: **B (faster search) -> round 3 of self-play with the faster engine -> interview practice while it runs**.
