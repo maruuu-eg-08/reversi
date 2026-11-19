@@ -158,6 +158,79 @@ fn index_of(p: u64, o: u64, squares: &[u8]) -> u32 {
     })
 }
 
+/// Bias + mobility term + the table value of every instance (`index(n)` = configuration of instance n).
+#[inline]
+fn sum_stage(stage: &Stage, my_moves: u64, opp_moves: u64, index: impl Fn(usize) -> u32) -> i32 {
+    let mobility = my_moves.count_ones() as i32 - opp_moves.count_ones() as i32;
+    let mut total = stage.bias + stage.mobility * mobility;
+    for (n, &offset) in layout().instance_offsets.iter().enumerate() {
+        total += i32::from(stage.table[(offset + index(n)) as usize]);
+    }
+    total
+}
+
+/// Pattern indices kept up to date during the search (incremental evaluation).
+///
+/// A move changes only the instances that contain the placed or flipped squares, so a child's indices
+/// are the parent's plus a few corrections instead of a full recomputation. Both views are kept:
+/// `v[0]` with digit 1 = player to move (what the evaluation reads) and `v[1]` with the colors swapped,
+/// so that a change of side to move is a swap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Features {
+    v: [[u16; MAX_INSTANCES]; 2],
+}
+
+impl Features {
+    /// Placeholder for searches without pattern evaluation (never read).
+    pub const EMPTY: Self = Self {
+        v: [[0; MAX_INSTANCES]; 2],
+    };
+
+    /// Indices of position (`p` to move, `o`); 3^10 - 1 fits in a u16.
+    pub fn new(p: u64, o: u64) -> Self {
+        let mut v = [[0u16; MAX_INSTANCES]; 2];
+        for (view, (a, b)) in [(p, o), (o, p)].into_iter().enumerate() {
+            for (n, idx) in indices(a, b).into_iter().enumerate() {
+                v[view][n] = idx as u16;
+            }
+        }
+        Self { v }
+    }
+
+    /// Indices after the player to move places a disc on square `sq` and flips `flipped`
+    /// (the opponent is then to move).
+    #[inline]
+    pub fn after_move(&self, sq: u32, flipped: u64) -> Self {
+        let lay = layout();
+        let [mut mine, mut theirs] = self.v;
+        let s = sq as usize;
+        for &(n, pow) in &lay.by_square[lay.square_start[s]..lay.square_start[s + 1]] {
+            let pow = pow as u16;
+            mine[n as usize] += pow; // empty -> player (digit 1)
+            theirs[n as usize] += 2 * pow; // empty -> opponent of the other view (digit 2)
+        }
+        let mut f = flipped;
+        while f != 0 {
+            let s = f.trailing_zeros() as usize;
+            f &= f - 1;
+            for &(n, pow) in &lay.by_square[lay.square_start[s]..lay.square_start[s + 1]] {
+                let pow = pow as u16;
+                mine[n as usize] -= pow; // opponent (2) -> player (1)
+                theirs[n as usize] += pow; // player (1) -> opponent (2) in the other view
+            }
+        }
+        Self { v: [theirs, mine] }
+    }
+
+    /// Indices after a pass (only the side to move changes).
+    #[inline]
+    pub fn passed(&self) -> Self {
+        Self {
+            v: [self.v[1], self.v[0]],
+        }
+    }
+}
+
 /// Scores of one stage
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stage {
@@ -205,12 +278,21 @@ impl PatternWeights {
                 idx[n as usize] += digit * pow;
             }
         }
-        let mobility = my_moves.count_ones() as i32 - opp_moves.count_ones() as i32;
-        let mut total = stage.bias + stage.mobility * mobility;
-        for (n, &offset) in lay.instance_offsets.iter().enumerate() {
-            total += i32::from(stage.table[(offset + idx[n]) as usize]);
-        }
-        total
+        sum_stage(stage, my_moves, opp_moves, |n| idx[n])
+    }
+
+    /// Same value as `evaluate_raw`, from indices kept up to date during the search
+    /// (`f` must be `Features::new(p, o)` or derived from it with `after_move` / `passed`).
+    #[inline]
+    pub fn evaluate_features(
+        &self,
+        f: &Features,
+        n_empty: u32,
+        my_moves: u64,
+        opp_moves: u64,
+    ) -> i32 {
+        let stage = &self.stages[stage_of(n_empty)];
+        sum_stage(stage, my_moves, opp_moves, |n| u32::from(f.v[0][n]))
     }
 
     /// Evaluation in discs for the player to move `p`.
@@ -359,6 +441,32 @@ mod tests {
                 .sum::<i32>()
                 + stage.bias;
             assert_eq!(w.evaluate_raw(p, o, 0, 0), simple);
+        }
+    }
+
+    #[test]
+    fn incremental_features_match_full_recomputation() {
+        // random games (passes included): after every move the updated indices equal a fresh computation
+        let mut r = crate::selfplay::Rng::new(4);
+        for _ in 0..200 {
+            let (mut p, mut o) = (0x0000_0008_1000_0000u64, 0x0000_0010_0800_0000u64);
+            let mut f = Features::new(p, o);
+            loop {
+                let moves = legal_moves(p, o);
+                if moves == 0 {
+                    if legal_moves(o, p) == 0 {
+                        break;
+                    }
+                    (p, o, f) = (o, p, f.passed());
+                } else {
+                    let list: Vec<u64> = crate::board::bits(moves).collect();
+                    let x = list[r.below(list.len() as u64) as usize];
+                    let (np, no) = crate::board::play(p, o, x);
+                    f = f.after_move(x.trailing_zeros(), no ^ p ^ x);
+                    (p, o) = (np, no);
+                }
+                assert_eq!(f, Features::new(p, o));
+            }
         }
     }
 

@@ -116,11 +116,22 @@ data/             training data (gitignored, large)
 | #17 | Everything translated to English; README redesigned with screenshots and charts | English UI, opening names in English, past PR titles/descriptions translated |
 | #19 | Learning loop round 2 (self-play with pattern eval, retrain on old+new data) + docs/DESIGN.md | **round 2 vs round 1 333-58-9 (84.4%, CI 80.8-87.9%)**; new data only 79.2% |
 | #20 | Claude Code subagents (code-reviewer, test-runner, ai-benchmarker) | merged 2026-11-18 with the user's OK |
+| #24 | B-1 incremental pattern evaluation (Rust only; Python unchanged by the user's choice, values identical) | evaluation was 61% of search time; depth 10 1.52x faster, Lv.5 +0.4 ply in 0.3 s, results identical on 30 positions |
 
 ## Current status
 
 Pattern evaluation (#10-#15), the WebAssembly web version (#16), the English translation with the new
-README (#17), the second round of self-play with docs/DESIGN.md (#19) and subagents (#20) are done.
+README (#17), the second round of self-play with docs/DESIGN.md (#19), subagents (#20) and B-1 incremental
+pattern evaluation (#24) are done.
+
+- Speed benchmark: `data/bench/` (gitignored) holds `speed_bench.py` (run from a venv with the extension;
+  `--compare speed_baseline.json` checks move/score/nodes are identical), the pre-B-1 baseline JSON and
+  `midgame.txt`. Rust-only quick bench: `cargo run --release --example bench_search --
+  examples/midgame_positions.txt 10 ../backend/pattern_weights.bin` (21,168,136 nodes at depth 10).
+- Incremental evaluation lives in Rust only (`pattern::Features`, `Searcher::incremental`); the test
+  `incremental_pattern_evaluation_gives_identical_results` compares it with full recomputation.
+- The user keeps an Obsidian dev log + roadmap (`~/Documents/Obsidian Vault/20_Projects/Notes/Othello AI - *.md`);
+  update the day's log and the roadmap after each piece of work.
 
 - Training data (gitignored): `data/selfplay-200k.bin` (round 1, linear eval, seed 0) and
   `data/selfplay-gen2-200k.bin` (round 2, `--patterns auto` with round-1 weights, seed 1; 11.95 M positions,
@@ -160,7 +171,7 @@ Start the day by confirming the plan with the user, then go.
    with the user.
 1. **Baseline first** (`ai-benchmarker`): nodes/s, seconds and completed depth at fixed depths 8 and 10 on fixed
    random positions, and the depth Lv.5 reaches in 0.3 s / 1 s. Save the numbers for the README.
-2. **B-1 incremental pattern evaluation** (Rust and Python): update only the pattern instances that contain the
+2. **B-1 incremental pattern evaluation** (DONE, #24; Rust only by the user's choice): update only the pattern instances that contain the
    placed or flipped squares instead of recomputing all 84. Values must stay identical, so
    `tests/test_rust_engine.py` / `tests/test_rust_web_port.py` keep passing with the same moves, scores and node
    counts. Also used by the wasm build.

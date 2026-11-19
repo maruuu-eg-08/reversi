@@ -126,6 +126,21 @@ equal node counts mean move ordering, the transposition table and pruning run in
 | 8 | 1.50 s/position (0.13 M nodes/s) | 0.018 s/position (10.9 M nodes/s) | ~84× |
 | 10 | 10.0 s/position (0.12 M nodes/s) | 0.129 s/position (9.6 M nodes/s) | ~78× |
 
+**Incremental pattern evaluation.** Profiling showed that 61% of the search time went into rebuilding all
+84 pattern indices at every evaluated position. The Rust search now keeps the indices up to date as moves
+are made (only the instances that contain the placed or flipped squares change) and switches the updates
+off once the search reaches the end of the game. Results are unchanged: the same moves, scores and node counts
+on 30 fixed positions (24 middlegame positions at depths 8 and 10, and 6 endgame solves with 14–18 empty
+squares). Lv.5 with pattern evaluation got faster (Apple M3, one core; positions in
+`backend_rust/examples/midgame_positions.txt`; timed through the Python module, and
+`cargo run --release --example bench_search` reruns the fixed-depth searches in Rust):
+
+| Lv.5 with pattern evaluation | Before | After | Speed-up |
+|---|---|---|---|
+| Depth 8, 24 middlegame positions | 1.28 s (1.84 M nodes/s) | 0.80 s (2.96 M nodes/s) | 1.61× |
+| Depth 10, 24 middlegame positions | 10.9 s (1.94 M nodes/s) | 7.2 s (2.95 M nodes/s) | 1.52× |
+| Average depth completed in 0.3 s / 1 s (24 positions × 3 runs) | 9.54 / 10.92 | 9.94 / 11.26 | +0.4 / +0.3 plies |
+
 Rebuilding the opening book went from **2.5 hours** (GitHub Actions + PyPy) to **2 min 12 s**, producing a
 byte-for-byte identical file.
 
@@ -233,4 +248,4 @@ tests/                  pytest, including Rust/Python equality tests
 ## Roadmap
 
 - A third round of self-play with the round-2 weights, and a rebuilt opening book.
-- Incremental pattern updates (only the patterns touched by a move) to search deeper.
+- A dedicated endgame solver (parity ordering, special code for the last few empty squares).
