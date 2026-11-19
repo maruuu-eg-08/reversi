@@ -130,7 +130,7 @@ pattern evaluation (#24) are done.
   examples/midgame_positions.txt 10 ../backend/pattern_weights.bin` (21,168,136 nodes at depth 10).
 - Incremental evaluation lives in Rust only (`pattern::Features`, `Searcher::incremental`); the test
   `incremental_pattern_evaluation_gives_identical_results` compares it with full recomputation.
-- **Round 3 of self-play started 2026-11-19 ~13:25** (after #24 was merged and deployed; live page checked):
+- **Round 3 of self-play started 2026-11-19 ~12:50, expected to finish ~15:05** (after #24 was merged and deployed; live page checked):
   `gen_data.py --games 200000 --patterns auto --seed 2 --out ../data/selfplay-gen3-200k.bin`, log
   `data/gen3-200k.log`, pid in `data/gen3.pid`, kept awake with `caffeinate -i -w <pid>`. ~23.8 games/s,
   about 2 h 20 min: the same speed as round 2, because B-1 does not speed up the exact endgame solves
