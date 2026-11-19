@@ -22,7 +22,7 @@ You can undo moves, copy the game record, and see the name of the opening being 
 
 | | |
 |---|---|
-| **Learned pattern evaluation** | 11 board shapes (84 rotated/reflected instances) × 15 game stages, trained on 400,000 self-play games (23.9 M positions) from two rounds of self-play. Beats the linear evaluation **194–6 (97.0%)**; the second round beats the first **84.4%**. |
+| **Learned pattern evaluation** | 11 board shapes (84 rotated/reflected instances) × 15 game stages, trained on self-play games over three rounds of a learning loop (each round's engine plays the next round's games). Beats the linear evaluation **194–6 (97.0%)**; round 2 beats round 1 **84.4%**, round 3 beats round 2 **54.8%**. |
 | **Rust engine, bit-identical to Python** | Iterative-deepening PVS with a transposition table and exact endgame solving. **~80× faster** than the Python version while returning the same move, score *and node count*. |
 | **Runs in the browser** | The Rust engine compiled to WebAssembly (145 KB) replaced a 10 MB Python runtime (Pyodide). Lv.5 now reads 9–11 plies per second in the browser. |
 | **Opening book** | 7,081 positions analyzed 10 plies deep, stored once per symmetry class. Its main line rediscovers the human *Tiger → Aubrey* opening. |
@@ -45,6 +45,7 @@ You can undo moves, copy the game record, and see the name of the opening being 
 | New web Lv.5 vs old web Lv.5 (1 s, approximate*) | 50 | 49–0–1 | 99.0% (96.2–100%) | +46.1 |
 | **Self-play round 2 vs round 1** (round 1 + 2 data, 0.3 s) | 400 | 333–58–9 | **84.4% (80.8–87.9%)** | +12.8 |
 | Self-play round 2, round 2 data only, vs round 1 (0.3 s) | 400 | 310–76–14 | 79.2% (75.3–83.2%) | +11.1 |
+| **Self-play round 3 vs round 2** (round 3 data only, 0.3 s) | 2,000 | 1038–846–116 | **54.8% (52.6–57.0%)** | +1.3 |
 
 Every opening (a few random moves from the start) is played twice with colors swapped, which cancels
 first-move advantage and opening luck. *The web comparison reproduces both versions natively; in the
@@ -110,6 +111,21 @@ games/s) and retraining gave a clearly stronger engine:
 
 Combining both rounds beat using only the new games: the new games are higher-quality but cover fewer of
 the positions a weaker opponent creates.
+
+**A third round, and diminishing returns.** The round-2 engine played another 200,000 games (seed 2,
+~24 games/s) and three candidates were trained (λ = 30) and matched against the round-2 weights:
+
+| Weights | Training data | vs round-2 weights (0.3 s) |
+|---|---|---|
+| **Round 3, new data only (adopted)** | 200,000 games, 12.0 M positions (training: 2 min) | 53.5% (48.6–58.4%) in 400 games; **54.8% (52.6–57.0%) in 2,000 games**, Elo +33 |
+| Rounds 2 + 3 | 400,000 games | 52.8% (47.9–57.6%), not significant |
+| Rounds 1 + 2 + 3 | 600,000 games | 51.5% (46.6–56.4%), not significant |
+
+All three were ahead but none was significant in 400 games, so the best one was re-tested on 1,000 fresh
+openings (2,000 games), where the gain is small but real. Two things changed from round 2: the gain
+shrank from +293 to +33 Elo (the loop is converging for this model size), and old data no longer helps
+(a likely reason: round-1 games, played by the weak linear evaluation, mostly cover positions that strong
+players now avoid).
 
 ### 3. Rust engine, verified against Python
 
@@ -247,5 +263,7 @@ tests/                  pytest, including Rust/Python equality tests
 
 ## Roadmap
 
-- A third round of self-play with the round-2 weights, and a rebuilt opening book.
+- A rebuilt opening book with the round-3 weights.
+- A larger evaluation model (e.g. a small neural network), since self-play with the current pattern model is
+  converging (+293 Elo in round 2, +33 in round 3).
 - A dedicated endgame solver (parity ordering, special code for the last few empty squares).

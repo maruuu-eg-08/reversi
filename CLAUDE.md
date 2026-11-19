@@ -117,12 +117,13 @@ data/             training data (gitignored, large)
 | #19 | Learning loop round 2 (self-play with pattern eval, retrain on old+new data) + docs/DESIGN.md | **round 2 vs round 1 333-58-9 (84.4%, CI 80.8-87.9%)**; new data only 79.2% |
 | #20 | Claude Code subagents (code-reviewer, test-runner, ai-benchmarker) | merged 2026-11-18 with the user's OK |
 | #24 | B-1 incremental pattern evaluation (Rust only; Python unchanged by the user's choice, values identical) | evaluation was 61% of search time; depth 10 1.52x faster, Lv.5 +0.4 ply in 0.3 s, results identical on 30 positions |
+| #26 | Learning loop round 3 (round-2 engine plays 200k games, retrain) | **round 3 (new data only) vs round 2: 1038-846-116 in 2,000 games, 54.8% (CI 52.6-57.0%)**; 2+3 data 52.8%, 1+2+3 51.5% (400 games, n.s.); converging (+293 -> +33 Elo) |
 
 ## Current status
 
 Pattern evaluation (#10-#15), the WebAssembly web version (#16), the English translation with the new
-README (#17), the second round of self-play with docs/DESIGN.md (#19), subagents (#20) and B-1 incremental
-pattern evaluation (#24) are done.
+README (#17), the second round of self-play with docs/DESIGN.md (#19), subagents (#20), B-1 incremental
+pattern evaluation (#24) and the third round of self-play (#26) are done.
 
 - Speed benchmark: `data/bench/` (gitignored) holds `speed_bench.py` (run from a venv with the extension;
   `--compare speed_baseline.json` checks move/score/nodes are identical), the pre-B-1 baseline JSON and
@@ -130,13 +131,12 @@ pattern evaluation (#24) are done.
   examples/midgame_positions.txt 10 ../backend/pattern_weights.bin` (21,168,136 nodes at depth 10).
 - Incremental evaluation lives in Rust only (`pattern::Features`, `Searcher::incremental`); the test
   `incremental_pattern_evaluation_gives_identical_results` compares it with full recomputation.
-- **Round 3 of self-play started 2026-11-19 ~12:50, expected to finish ~15:05** (after #24 was merged and deployed; live page checked):
-  `gen_data.py --games 200000 --patterns auto --seed 2 --out ../data/selfplay-gen3-200k.bin`, log
-  `data/gen3-200k.log`, pid in `data/gen3.pid`, kept awake with `caffeinate -i -w <pid>`. ~23.8 games/s,
-  about 2 h 20 min: the same speed as round 2, because B-1 does not speed up the exact endgame solves
-  (from 14 empties) that dominate data generation (B-2 would). If the Mac sleeps (lid closed) it pauses;
-  if the process dies, rerun the same command: it resumes from the file. Next: retrain (round 3 only;
-  rounds 1+2+3; maybe 2+3), arena each vs the round-2 weights (400 games at 0.3 s), adopt if stronger.
+- **Round 3 of self-play is done (2026-11-19)**: `data/selfplay-gen3-200k.bin` (seed 2, round-2 weights, 11.96 M
+  positions; ran 12:50-16:29 incl. a ~1 h pause while the lid was closed). Candidates `data/pw-gen3.bin`
+  (adopted), `pw-gen23.bin`, `pw-gen123.bin` (λ = 30); arena log `data/arena-gen3.log`. None was significant
+  in 400 games, so the best was re-tested with `-n 1000 --seed 1` (new openings): significant. Lesson: a gain
+  of a few percent needs ~2,000 games; old round-1 data no longer helps; the loop is converging, so the next
+  strength gain likely needs a bigger model (D, neural network) rather than round 4.
 - The user keeps an Obsidian dev log + roadmap (`~/Documents/Obsidian Vault/20_Projects/Notes/Othello AI - *.md`);
   update the day's log and the roadmap after each piece of work.
 
@@ -144,13 +144,13 @@ pattern evaluation (#24) are done.
   `data/selfplay-gen2-200k.bin` (round 2, `--patterns auto` with round-1 weights, seed 1; 11.95 M positions,
   ~2 h 15 min at ~24 games/s). Round-1 weights are kept as `data/pw-l30.bin`; candidates `data/pw-gen2.bin`
   (round-2 data only) and `data/pw-gen12.bin` (adopted). Arena log: `data/arena-gen2.log`.
-- Weights: `backend/pattern_weights.bin` = round 1 + round 2 data, λ = 30 (commit adopted versions only).
-  Deployed to GitHub Pages on 2026-11-18 (#19); the live `engine/pattern_weights.bin` SHA-256 matched and a
-  game was played in the browser.
-- The opening book was NOT rebuilt with the round-2 weights (earlier rebuilds were not significant).
+- Weights: `backend/pattern_weights.bin` = round 3 data only, λ = 30 (#26; commit adopted versions only).
+  Round-2 weights (round 1 + 2 data) are kept as `data/pw-gen12.bin`.
+- The opening book was NOT rebuilt with the round-2/3 weights (earlier rebuilds were not significant).
 - The web Lv.5 uses Rust (wasm) + pattern evaluation + opening book. Lv.1-4 are Rust ports identical to Python.
 - README chart `docs/images/head-to-head.png` is drawn by a small matplotlib script (not in the repo; same style:
-  horizontal bars + 95% CI, background #fcfcfb, bar #2a78d6). `r2-by-stage.png` still shows round 1.
+  horizontal bars + 95% CI, background #fcfcfb, bar #2a78d6). `r2-by-stage.png` still shows round 1. The chart
+  script used on 2026-11-19 was in the session scratchpad (8 rows incl. round 3; figsize 9x5.3, dpi 200).
 - The repository About section was updated (description, homepage link to the game, topics:
   rust, webassembly, game-ai, othello, reversi, machine-learning).
 

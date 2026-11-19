@@ -226,6 +226,23 @@ different data sets cannot be compared, which is why only the match decides. Sec
 beat the new data alone: the new games are better played, but the old ones cover positions that a weaker
 opponent creates, and twice the data helps the many rarely seen pattern configurations.
 
+Round 3: 200,000 games played by the round-2 weights (seed 2), three candidates against the round-2
+weights:
+
+| Candidate | Games | W–L–D | Score vs round 2 (95% CI) | Elo |
+|---|---|---|---|---|
+| Round-3 data only | 400 | 199–171–30 | 53.5% (48.6–58.4%) | +24 |
+| Round-2 + round-3 data | 400 | 202–180–18 | 52.8% (47.9–57.6%) | +19 |
+| Round-1 + 2 + 3 data | 400 | 195–183–22 | 51.5% (46.6–56.4%) | +10 |
+| Round-3 data only, re-test on 1,000 new openings (adopted) | 2,000 | 1038–846–116 | **54.8% (52.6–57.0%)** | +33 |
+
+No candidate was significant in 400 games: a gain of a few percent needs about 2,000 games to show (the CI
+half-width shrinks with the square root of the number of games), so only the best candidate was re-tested,
+on new openings so the first match could not bias it. Two lessons. The loop is converging: +293 Elo in
+round 2, +33 in round 3, so further gains need a larger model rather than more rounds. And the best data
+mix flipped: old data helped in round 2 but now hurts slightly, probably because the round-1 games
+(played by the linear evaluation) cover positions that the current engine no longer reaches.
+
 ## 7. Measuring strength
 
 `arena.py` is the referee for every claim in this project.
@@ -279,6 +296,7 @@ Every row is an `arena.py` match with colors swapped; the score counts a draw as
 | Book rebuilt with the pattern evaluation vs old book | 400 | 205–181–14 | 53.0% (48.1–57.9%), **not significant** | same reason |
 | Wasm in the browser vs Pyodide (approximate, native reproduction) | 50 | 49–0–1 | 99.0% (96.2–100%) | speed in the browser turned into strength |
 | Second round of self-play (round 1 + 2 data) vs round 1 | 400 | 333–58–9 | **84.4% (80.8–87.9%)** | the learning loop pays off; keep the old data too |
+| Third round of self-play (round 3 data only) vs round 2 | 2,000 | 1038–846–116 | **54.8% (52.6–57.0%)** | still improving, but converging; a small gain needs many games to prove |
 
 The opening-book result is the most useful "failure": it showed that the engine was not losing in the
 opening, which pointed to the evaluation function as the bottleneck and led to the pattern work.
@@ -304,7 +322,8 @@ started in Python, added alpha-beta search with iterative deepening and a transp
 by measurement that the evaluation function was the bottleneck. I replaced a hand-tuned linear evaluation
 with pattern tables trained by ridge regression on self-play games, which won 97% of games against the
 old version (194–6, 95% CI 94.6–99.4%); a second round of self-play by the new evaluation won another 84%
-against the first (400 games, 95% CI 80.8–87.9%). The Rust port is verified to be identical to the Python reference and is about
+against the first (400 games, 95% CI 80.8–87.9%), and a third round a further 54.8% (2,000 games, 95% CI
+52.6–57.0%), which showed the loop converging. The Rust port is verified to be identical to the Python reference and is about
 80× faster.
 
 **Q: What was the hardest part?**
